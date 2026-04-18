@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARIA 911 — AI Emergency Intake</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --red:#E8281A;--red-dark:#B01F13;--red-dim:rgba(232,40,26,0.12);
+  --amber:#F59E0B;--green:#10B981;--blue:#3B82F6;
+  --bg:#0A0A0B;--surface:#111113;--surface2:#18181B;--surface3:#222227;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
+  --text:#F4F4F5;--text-muted:#71717A;--text-dim:#3F3F46;
+  --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--display:'Syne',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;}
+
+/* SETUP */
+.setup-overlay{position:fixed;inset:0;background:rgba(10,10,11,0.97);z-index:200;display:flex;align-items:center;justify-content:center;}
+.setup-card{background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:36px 40px;max-width:480px;width:90%;}
+.setup-card h1{font-family:var(--display);font-size:28px;font-weight:800;margin-bottom:6px;}
+.setup-card h1 span{color:var(--red);}
+.setup-card p{color:var(--text-muted);font-size:13px;line-height:1.7;margin-bottom:24px;}
+.setup-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);font-family:var(--mono);font-size:11px;color:var(--green);margin-bottom:20px;}
+.input-group{margin-bottom:16px;}
+.input-group label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;}
+.input-group input{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:10px 14px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;transition:border-color 0.15s;}
+.input-group input:focus{border-color:var(--red);}
+.input-group input::placeholder{color:var(--text-dim);}
+.setup-status{font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-bottom:16px;min-height:16px;}
+.setup-status.ok{color:var(--green);}
+.setup-status.err{color:var(--red);}
+.btn-big{width:100%;padding:13px;border-radius:8px;background:var(--red);border:none;color:#fff;font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s;}
+.btn-big:hover{background:var(--red-dark);}
+.btn-big:disabled{opacity:0.4;cursor:not-allowed;}
+.setup-note{margin-top:14px;font-size:11px;color:var(--text-dim);font-family:var(--mono);line-height:1.6;}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 28px;height:54px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:100;}
+.logo{font-family:var(--display);font-size:21px;font-weight:800;color:var(--red);}
+.logo span{color:var(--text);}
+.topbar-mid{font-family:var(--mono);font-size:11px;color:var(--text-muted);display:flex;gap:12px;align-items:center;}
+.pill{display:flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;border:1px solid var(--border2);font-family:var(--mono);font-size:11px;}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--text-dim);}
+.dot.green{background:var(--green);box-shadow:0 0 5px var(--green);}
+.dot.red{background:var(--red);box-shadow:0 0 5px var(--red);animation:pulse 1s infinite;}
+.dot.amber{background:var(--amber);animation:pulse 1.5s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
+
+/* MAIN */
+.main{display:flex;flex:1;height:calc(100vh - 54px);}
+
+/* CALLER PANEL */
+.caller-panel{width:40%;border-right:1px solid var(--border);display:flex;flex-direction:column;}
+.panel-hdr{padding:18px 24px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.sub{font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--text-muted);text-transform:uppercase;margin-bottom:3px;}
+.panel-hdr h2{font-family:var(--display);font-size:17px;font-weight:700;}
+
+/* HOLD SCREEN */
+.hold-screen{padding:20px 24px 10px;}
+.hold-badge{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;}
+.hold-icon{width:44px;height:44px;border-radius:50%;background:var(--red-dim);border:1px solid rgba(232,40,26,0.25);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;}
+.hold-info h3{font-size:13px;font-weight:500;}
+.hold-info p{font-family:var(--mono);font-size:11px;color:var(--text-muted);margin-top:2px;}
+.hold-timer-row{display:flex;align-items:baseline;gap:16px;padding:0 2px;}
+.hold-timer{font-family:var(--mono);font-size:34px;font-weight:600;color:var(--red);letter-spacing:-1px;}
+.hold-timer-label{font-family:var(--mono);font-size:11px;color:var(--text-muted);}
+
+/* WAVE */
+.wave-wrap{padding:6px 24px 10px;}
+canvas#wave{width:100%;height:52px;border-radius:6px;background:var(--surface2);display:block;}
+
+/* ARIA BOX */
+.aria-box{margin:0 24px 12px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2);border-radius:8px;padding:12px 14px;min-height:56px;}
+.aria-label{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--amber);margin-bottom:5px;display:flex;align-items:center;gap:6px;}
+.aria-text{font-size:12px;line-height:1.7;color:var(--text-muted);font-family:var(--mono);}
+.speaking-anim{display:inline-flex;gap:2px;align-items:flex-end;height:12px;}
+.speaking-anim span{width:3px;background:var(--amber);border-radius:2px;animation:wavebar 0.8s ease infinite;}
+.speaking-anim span:nth-child(2){animation-delay:0.15s;}
+.speaking-anim span:nth-child(3){animation-delay:0.3s;}
+@keyframes wavebar{0%,100%{height:3px}50%{height:11px}}
+
+/* TRANSCRIPT */
+.transcript-wrap{flex:1;overflow:hidden;display:flex;flex-direction:column;margin:0 24px 8px;}
+.transcript-label{font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;}
+.transcript-box{flex:1;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;font-family:var(--mono);font-size:11px;line-height:1.9;}
+.t-caller{color:var(--text);}
+.t-caller .t-tag{color:var(--red);}
+.t-aria{color:var(--amber);opacity:0.9;}
+.t-aria .t-tag{color:var(--amber);}
+.t-sys{color:var(--text-dim);font-size:10px;}
+.t-trans{color:var(--blue);font-size:10px;padding-left:12px;}
+.t-time{color:var(--text-dim);font-size:10px;}
+
+/* LANG */
+.lang-row{padding:6px 24px;display:flex;align-items:center;gap:8px;}
+.lang-chip{display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;background:var(--surface2);border:1px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--text-muted);}
+.lang-chip.active{border-color:rgba(59,130,246,0.4);color:var(--blue);background:rgba(59,130,246,0.08);}
+
+/* CONTROLS */
+.caller-controls{padding:12px 24px 20px;display:flex;gap:10px;}
+.btn{flex:1;padding:11px;border-radius:8px;font-size:13px;font-family:var(--sans);font-weight:500;cursor:pointer;border:1px solid var(--border2);background:var(--surface2);color:var(--text);transition:all 0.15s;}
+.btn:hover{background:var(--surface3);}
+.btn.start{background:var(--red);border-color:var(--red);color:#fff;}
+.btn.start:hover{background:var(--red-dark);}
+.btn.stop{background:rgba(232,40,26,0.12);border-color:var(--red);color:var(--red);}
+.btn:disabled{opacity:0.35;cursor:not-allowed;}
+
+/* OPERATOR PANEL */
+.op-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.op-hdr{padding:18px 24px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;}
+.op-stats{display:flex;gap:18px;}
+.stat .n{font-family:var(--mono);font-size:20px;font-weight:600;}
+.stat .l{font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);}
+.op-body{flex:1;overflow-y:auto;padding:18px 24px;display:flex;flex-direction:column;gap:14px;}
+
+/* TICKET */
+.ticket{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.ticket.CRITICAL{border-color:rgba(232,40,26,0.45);}
+.ticket.HIGH{border-color:rgba(245,158,11,0.35);}
+.ticket.MEDIUM{border-color:rgba(59,130,246,0.3);}
+.ticket-top{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.ticket-id{font-family:var(--mono);font-size:10px;color:var(--text-muted);margin-bottom:2px;}
+.ticket-type{font-size:14px;font-weight:600;min-height:20px;}
+.pbadge{padding:3px 10px;border-radius:20px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;}
+.pbadge.CRITICAL{background:var(--red-dim);color:var(--red);border:1px solid rgba(232,40,26,0.3);}
+.pbadge.HIGH{background:rgba(245,158,11,0.1);color:var(--amber);border:1px solid rgba(245,158,11,0.3);}
+.pbadge.MEDIUM{background:rgba(59,130,246,0.1);color:var(--blue);border:1px solid rgba(59,130,246,0.25);}
+.pbadge.LOW{background:var(--surface2);color:var(--text-muted);border:1px solid var(--border2);}
+.pbadge.INTAKE{background:var(--surface2);color:var(--text-dim);border:1px solid var(--border);}
+
+.ticket-body{padding:16px;display:flex;flex-direction:column;gap:12px;}
+.fields-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.field-lbl{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:3px;}
+.field-val{font-family:var(--mono);font-size:11px;color:var(--text);min-height:14px;transition:color 0.4s;}
+.field-val.empty{color:var(--text-dim);}
+.field-val.new{color:var(--green);}
+
+/* FLAGS */
+.flags-row{display:flex;flex-wrap:wrap;gap:6px;}
+.flag-chip{padding:3px 10px;border-radius:20px;font-family:var(--mono);font-size:10px;background:var(--red-dim);color:var(--red);border:1px solid rgba(232,40,26,0.25);}
+
+/* SEVERITY */
+.sev-item{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+.sev-name{font-family:var(--mono);font-size:10px;color:var(--text-muted);width:130px;flex-shrink:0;}
+.sev-track{flex:1;height:4px;background:var(--surface3);border-radius:2px;overflow:hidden;}
+.sev-fill{height:100%;border-radius:2px;transition:width 1s ease;}
+.sev-fill.red{background:var(--red);}
+.sev-fill.amber{background:var(--amber);}
+.sev-fill.green{background:var(--green);}
+.sev-fill.blue{background:var(--blue);}
+.sev-pct{font-family:var(--mono);font-size:10px;color:var(--text-muted);width:32px;text-align:right;}
+
+/* TIMELINE */
+.tl-item{display:flex;gap:10px;}
+.tl-spine{display:flex;flex-direction:column;align-items:center;}
+.tl-dot{width:8px;height:8px;border-radius:50%;border:1px solid var(--border2);background:var(--surface3);flex-shrink:0;margin-top:2px;transition:all 0.4s;}
+.tl-dot.done{background:var(--green);border-color:var(--green);}
+.tl-dot.active{background:var(--amber);border-color:var(--amber);animation:pulse 1s infinite;}
+.tl-line{width:1px;flex:1;background:var(--border);min-height:12px;}
+.tl-txt{font-family:var(--mono);font-size:10px;color:var(--text-dim);padding-bottom:8px;transition:color 0.4s;}
+.tl-txt.done{color:var(--text-muted);}
+.tl-txt.active{color:var(--amber);}
+
+/* DISPATCH REC */
+.dispatch-rec{padding:10px 14px;background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.2);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--green);}
+.dispatch-rec-lbl{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;opacity:0.7;margin-bottom:4px;}
+
+/* TRANSLATION */
+.trans-panel{padding:10px 14px;background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.2);border-radius:8px;display:none;}
+.trans-panel.show{display:block;}
+.trans-lbl{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--blue);margin-bottom:6px;}
+.trans-line{font-family:var(--mono);font-size:11px;margin-bottom:4px;}
+.trans-orig{color:var(--text-dim);}
+.trans-en{color:var(--blue);}
+
+/* TICKET ACTIONS */
+.ticket-actions{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;}
+.t-act{padding:7px 14px;border-radius:6px;font-family:var(--mono);font-size:11px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;transition:all 0.15s;}
+.t-act:hover{background:var(--surface3);}
+.t-act.red{border-color:rgba(232,40,26,0.4);color:var(--red);background:var(--red-dim);}
+.t-act.green{border-color:rgba(16,185,129,0.4);color:var(--green);background:rgba(16,185,129,0.08);}
+
+/* EMPTY */
+.empty{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:48px;color:var(--text-dim);gap:10px;}
+.empty .e-icon{font-size:44px;opacity:0.25;}
+.empty h3{font-size:15px;font-weight:500;color:var(--text-muted);}
+.empty p{font-family:var(--mono);font-size:11px;color:var(--text-dim);line-height:1.8;max-width:280px;}
+
+/* LIVE BAR */
+.live-bar{padding:8px 24px;border-top:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;color:var(--text-muted);}
+
+/* REPORT MODAL */
+.report-overlay{position:fixed;inset:0;background:rgba(10,10,11,0.95);z-index:300;display:none;align-items:center;justify-content:center;padding:20px;}
+.report-overlay.show{display:flex;}
+.report-card{background:var(--surface);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:740px;max-height:90vh;display:flex;flex-direction:column;}
+.report-hdr{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.report-hdr h3{font-family:var(--display);font-size:17px;font-weight:700;}
+.report-body{flex:1;overflow-y:auto;padding:24px;}
+.report-body pre{font-family:var(--mono);font-size:11.5px;line-height:1.8;color:var(--text-muted);white-space:pre-wrap;word-break:break-word;}
+.report-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:10px;}
+.btn-sm{padding:8px 18px;border-radius:7px;font-family:var(--mono);font-size:11px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);cursor:pointer;}
+.btn-sm:hover{background:var(--surface3);}
+.btn-sm.primary{background:var(--red);border-color:var(--red);color:#fff;}
+
+/* PROCESSING BADGE */
+.processing-badge{display:none;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);font-family:var(--mono);font-size:10px;color:var(--amber);}
+.processing-badge.show{display:flex;}
+
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:2px;}
+
+@media(max-width:860px){.main{flex-direction:column;height:auto;}.caller-panel{width:100%;}}
+</style>
+</head>
+<body>
+
+<!-- SETUP OVERLAY -->
+<div class="setup-overlay" id="setupOverlay">
+  <div class="setup-card">
+    <h1>ARIA <span>911</span></h1>
+    <div class="setup-badge">✓ Browser Web Speech API — no Whisper install needed</div>
+    <p>Your voice is transcribed in the browser (Chrome / Edge recommended), same pattern as continuous dictation. Only your Anthropic (Claude) key is required for analysis and responses.</p>
+    <div class="input-group">
+      <label>Anthropic API Key (Claude) — Required</label>
+      <input type="password" id="anthropicKey" placeholder="sk-ant-..." />
+    </div>
+    <div class="input-group">
+      <label>ElevenLabs API Key — for realistic voice (optional)</label>
+      <input type="password" id="elevenKey" placeholder="Paste ElevenLabs key here..." />
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:5px">Get free key at elevenlabs.io → Profile → API Key. Leave blank to use basic browser voice.</div>
+    </div>
+    <div class="setup-status" id="setupStatus">Enter your Claude API key to continue</div>
+    <button class="btn-big" id="setupBtn" onclick="initSystem()">Launch ARIA</button>
+    <div class="setup-note">
+      Keys stay on your local machine — never stored or shared.<br><br>
+      Claude key → console.anthropic.com/settings/keys<br>
+      ElevenLabs key → elevenlabs.io → your profile icon → API Key
+    </div>
+  </div>
+</div>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="logo">ARIA<span> 911</span></div>
+  <div class="topbar-mid">
+    <span>WEB SPEECH + CLAUDE</span>
+    <span style="color:var(--border2)">|</span>
+    <span>AUSTIN METRO DISPATCH</span>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <div class="processing-badge" id="processingBadge">⟳ AI processing...</div>
+    <div class="pill"><div class="dot" id="sysDot"></div><span id="sysText">Offline</span></div>
+    <div class="pill"><span id="clockEl">00:00:00</span></div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- CALLER PANEL -->
+  <div class="caller-panel">
+    <div class="panel-hdr">
+      <div>
+        <div class="sub">Caller Interface</div>
+        <h2>Live 911 Voice (Browser STT)</h2>
+      </div>
+      <div class="pill"><div class="dot" id="callDot"></div><span id="callText">Standby</span></div>
+    </div>
+
+    <div class="hold-screen">
+      <div class="hold-badge">
+        <div class="hold-icon">📞</div>
+        <div class="hold-info">
+          <h3>Austin Emergency Services — 911</h3>
+          <p id="holdMsg">All operators are currently busy. Please hold.</p>
+        </div>
+      </div>
+      <div class="hold-timer-row">
+        <div class="hold-timer" id="holdTimer">0:00</div>
+        <div class="hold-timer-label">on hold</div>
+      </div>
+    </div>
+
+    <div class="wave-wrap"><canvas id="wave" height="52"></canvas></div>
+
+    <div class="aria-box">
+      <div class="aria-label">
+        <span>ARIA AI Response</span>
+        <div class="speaking-anim" id="speakAnim" style="display:none"><span></span><span></span><span></span></div>
+      </div>
+      <div class="aria-text" id="ariaText">Waiting for call to begin...</div>
+    </div>
+
+    <div class="transcript-wrap">
+      <div class="transcript-label">// Live Transcript</div>
+      <div class="transcript-box" id="transcript">
+        <div class="t-sys">ARIA SYSTEM INITIALIZED — AWAITING CALL</div>
+      </div>
+    </div>
+
+    <div class="lang-row">
+      <div class="lang-chip" id="langChip">🌐 Language: Auto-detecting</div>
+      <div class="lang-chip active" id="transChip" style="display:none">🤖 Auto-translation ON</div>
+    </div>
+
+    <div class="caller-controls">
+      <button class="btn start" id="startBtn" onclick="startCall()">▶ Start Call</button>
+      <button class="btn stop" id="stopBtn" onclick="stopCall()" disabled>■ End Call</button>
+      <button class="btn" id="reportBtn" onclick="generateReport()" disabled>📋 Report</button>
+      <button class="btn" id="ttsBtn" onclick="toggleTTS()" title="Toggle ARIA voice on/off">🔊 Voice ON</button>
+    </div>
+  </div>
+
+  <!-- OPERATOR PANEL -->
+  <div class="op-panel">
+    <div class="op-hdr">
+      <div>
+        <div class="sub">Dispatcher Console</div>
+        <div style="font-family:var(--display);font-size:17px;font-weight:700">Live Incident Ticket</div>
+      </div>
+      <div class="op-stats">
+        <div class="stat"><div class="n" id="sActive" style="color:var(--amber)">0</div><div class="l">Active</div></div>
+        <div class="stat"><div class="n" id="sPriority" style="color:var(--red)">—</div><div class="l">Priority</div></div>
+        <div class="stat"><div class="n" id="sSaved" style="color:var(--green)">—</div><div class="l">Saved</div></div>
+      </div>
+    </div>
+    <div class="op-body" id="opBody">
+      <div class="empty" id="emptyState">
+        <div class="e-icon">🎯</div>
+        <h3>No active incidents</h3>
+        <p>Click Start Call and speak into your microphone. The ticket builds live as you speak — powered by your browser’s speech recognition and Claude AI.</p>
+      </div>
+    </div>
+    <div class="live-bar">
+      <div class="dot" id="liveDot"></div>
+      <span id="liveBarText">Waiting for call...</span>
+    </div>
+  </div>
+</div>
+
+<!-- REPORT MODAL -->
+<div class="report-overlay" id="reportOverlay">
+  <div class="report-card">
+    <div class="report-hdr">
+      <h3>📋 Incident Report</h3>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text-muted)" id="reportMeta"></div>
+    </div>
+    <div class="report-body"><pre id="reportContent">Generating AI incident report...</pre></div>
+    <div class="report-footer">
+      <button class="btn-sm primary" onclick="copyReport()">Copy Report</button>
+      <button class="btn-sm" onclick="window.print()">Print / Save PDF</button>
+      <button class="btn-sm" onclick="closeReport()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let sessionId = null, ws = null, audioStream = null;
+let speechRecognition = null, transcriptChunkTimer = null, pendingTranscriptDelta = '';
+let speechListenPaused = false;
+let callActive = false, holdSeconds = 0;
+let holdInterval = null, clockInterval = null, waveAnim = null;
+let analyser = null, audioCtx = null, dataArray = null;
+let lastReport = '';
+let ttsQueue = [], ttsSpeaking = false, ttsEnabled = true;
+let lastSpokenText = '';
+const TL = ['Call received by ARIA','Location identified','Priority classified','Ticket sent to dispatcher','Units dispatched'];
+
+// ── TEXT TO SPEECH (ElevenLabs) ──────────────────────────────────────────────
+let elevenLabsKey = '';
+const ELEVEN_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL'; // "Sarah" — calm, clear, professional
+
+function setElevenKey(key) { elevenLabsKey = key; }
+
+async function speak(text, onDone) {
+  if (!ttsEnabled || !text || text === lastSpokenText) { if(onDone) onDone(); return; }
+  lastSpokenText = text;
+
+  // Pause mic immediately so we don't capture anything while waiting for audio
+  ttsSpeaking = true;
+  pauseMic();
+
+  if (!elevenLabsKey) {
+    // Fallback to browser TTS if no ElevenLabs key
+    speakBrowser(text, onDone);
+    return;
+  }
+
+  try {
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE_ID}`, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': elevenLabsKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text: text,
+        model_id: 'eleven_turbo_v2',
+        voice_settings: { stability: 0.5, similarity_boost: 0.75, speed: 1.1 }
+      })
+    });
+
+    if (!res.ok) {
+      console.warn('[ElevenLabs] API error, falling back to browser TTS', res.status);
+      speakBrowser(text, onDone);
+      return;
+    }
+
+    const audioBlob = await res.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioUrl);
+
+    audio.onended = () => {
+      URL.revokeObjectURL(audioUrl);
+      ttsSpeaking = false;
+      setTimeout(() => { resumeMic(); if(onDone) onDone(); }, 400);
+    };
+    audio.onerror = () => {
+      ttsSpeaking = false;
+      setTimeout(() => { resumeMic(); if(onDone) onDone(); }, 400);
+    };
+    audio.play();
+
+  } catch(err) {
+    console.warn('[ElevenLabs] Error, falling back:', err.message);
+    speakBrowser(text, onDone);
+  }
+}
+
+function speakBrowser(text, onDone) {
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(text);
+  const voices = window.speechSynthesis.getVoices();
+  const preferred = voices.find(v => v.name.includes('Samantha') || v.name.includes('Karen'))
+    || voices.find(v => v.lang === 'en-US') || voices[0];
+  if (preferred) utt.voice = preferred;
+  utt.rate = 1.08;
+  utt.onend = () => { ttsSpeaking = false; setTimeout(() => { resumeMic(); if(onDone) onDone(); }, 400); };
+  utt.onerror = () => { ttsSpeaking = false; setTimeout(() => { resumeMic(); if(onDone) onDone(); }, 400); };
+  window.speechSynthesis.speak(utt);
+}
+
+function pauseMic() {
+  speechListenPaused = true;
+  try { speechRecognition?.stop(); } catch(e) {}
+}
+function resumeMic() {
+  if (!callActive) return;
+  speechListenPaused = false;
+  try { speechRecognition?.start(); } catch(e) {}
+}
+
+// ── CLOCK ─────────────────────────────────────────────────────────────────────
+function startClock() {
+  const s = Date.now();
+  clockInterval = setInterval(() => {
+    const d = Math.floor((Date.now()-s)/1000);
+    g('clockEl').textContent = [Math.floor(d/3600),Math.floor((d%3600)/60),d%60].map(n=>String(n).padStart(2,'0')).join(':');
+  }, 1000);
+}
+
+function g(id) { return document.getElementById(id); }
+
+// ── SETUP ─────────────────────────────────────────────────────────────────────
+async function initSystem() {
+  const key = g('anthropicKey').value.trim();
+  const elKey = g('elevenKey').value.trim();
+  const btn = g('setupBtn'), status = g('setupStatus');
+  if (!key.startsWith('sk-ant-')) {
+    status.textContent = '✗ Claude key must start with sk-ant- — check and try again';
+    status.className = 'setup-status err'; return;
+  }
+  if (elKey) setElevenKey(elKey);
+  btn.disabled = true;
+  status.textContent = 'Connecting...';
+  status.className = 'setup-status';
+  try {
+    const r = await fetch('/api/configure', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ anthropicKey: key })
+    });
+    if (!r.ok) throw new Error('Server error');
+    const check = await fetch('/api/status');
+    const data = await check.json();
+    const hasSR = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
+    if (!hasSR) throw new Error('Web Speech API not available — use Chrome, Edge, or Safari');
+    if (!data.anthropic) throw new Error('Claude key not accepted');
+    status.textContent = '✓ Browser speech + Claude connected';
+    status.className = 'setup-status ok';
+    setTimeout(() => {
+      g('setupOverlay').style.display = 'none';
+      connectWS(); startClock(); initWave();
+      g('sysDot').className = 'dot green';
+      g('sysText').textContent = 'ONLINE';
+    }, 600);
+  } catch(err) {
+    status.textContent = '✗ ' + err.message;
+    status.className = 'setup-status err';
+    btn.disabled = false;
+  }
+}
+
+// ── WEBSOCKET ─────────────────────────────────────────────────────────────────
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}`);
+  ws.onopen = () => addSys('WebSocket connected — dispatcher console live');
+  ws.onmessage = e => handleMsg(JSON.parse(e.data));
+  ws.onclose = () => { addSys('Reconnecting...'); setTimeout(connectWS, 2000); };
+}
+
+function handleMsg(msg) {
+  switch(msg.type) {
+    case 'transcription':
+      g('processingBadge').classList.add('show');
+      addLine('caller', msg.text, msg.translatedText);
+      if (msg.isNonEnglish) showTrans(msg.text, msg.translatedText);
+      break;
+    case 'ai_analysis':
+      g('processingBadge').classList.remove('show');
+      if (msg.ariaResponse) setARIA(msg.ariaResponse);
+      updateTicket(msg.ticket);
+      updateSev(msg.severityScores);
+      updateTL(msg.timelineStep);
+      updateFlags(msg.keyFlags);
+      if (msg.dispatchRecommendation) setDispatchRec(msg.dispatchRecommendation);
+      if (msg.ticket?.priority) g('sPriority').textContent = msg.ticket.priority;
+      break;
+    case 'report_ready':
+      showReport(msg.report); break;
+    case 'session_start':
+      buildTicket(msg.ticket); break;
+    case 'error':
+      g('processingBadge').classList.remove('show');
+      addSys('Error: ' + msg.message); break;
+  }
+}
+
+// ── WAVEFORM ──────────────────────────────────────────────────────────────────
+function initWave() {
+  const canvas = g('wave'), ctx = canvas.getContext('2d'); let t = 0;
+  function idle() {
+    canvas.width = canvas.offsetWidth * devicePixelRatio;
+    canvas.height = canvas.offsetHeight * devicePixelRatio;
+    ctx.scale(devicePixelRatio, devicePixelRatio);
+    ctx.clearRect(0,0,canvas.offsetWidth,canvas.offsetHeight);
+    ctx.strokeStyle = '#3F3F46'; ctx.lineWidth = 1.5;
+    const w = canvas.offsetWidth, h = canvas.offsetHeight;
+    for(let i=0;i<50;i++){
+      const x=(i/50)*w, amp=Math.sin(t*0.4+i*0.4)*2+2;
+      ctx.beginPath(); ctx.moveTo(x,h/2-amp); ctx.lineTo(x,h/2+amp); ctx.stroke();
+    }
+    t+=0.04;
+    if(!callActive) waveAnim = requestAnimationFrame(idle);
+  }
+  idle();
+}
+
+function startLiveWave() {
+  if(waveAnim) cancelAnimationFrame(waveAnim);
+  const canvas = g('wave'), ctx = canvas.getContext('2d');
+  function draw() {
+    canvas.width = canvas.offsetWidth * devicePixelRatio;
+    canvas.height = canvas.offsetHeight * devicePixelRatio;
+    ctx.scale(devicePixelRatio, devicePixelRatio);
+    ctx.clearRect(0,0,canvas.offsetWidth,canvas.offsetHeight);
+    ctx.strokeStyle = '#E8281A'; ctx.lineWidth = 1.5;
+    const w = canvas.offsetWidth, h = canvas.offsetHeight;
+    if(analyser && dataArray) {
+      analyser.getByteFrequencyData(dataArray);
+      const step = Math.floor(dataArray.length/50);
+      for(let i=0;i<50;i++){
+        const amp=(dataArray[i*step]||0)/255*20+2, x=(i/50)*w;
+        ctx.beginPath(); ctx.moveTo(x,h/2-amp); ctx.lineTo(x,h/2+amp); ctx.stroke();
+      }
+    } else {
+      for(let i=0;i<50;i++){
+        const amp=Math.random()*14+3, x=(i/50)*w;
+        ctx.beginPath(); ctx.moveTo(x,h/2-amp); ctx.lineTo(x,h/2+amp); ctx.stroke();
+      }
+    }
+    if(callActive) waveAnim = requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ── CALL START ────────────────────────────────────────────────────────────────
+async function startCall() {
+  try {
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch(e) {
+    alert('Microphone access denied. Please allow microphone access in your browser settings.'); return;
+  }
+  const res = await fetch('/api/session/start', { method:'POST' });
+  const data = await res.json();
+  sessionId = data.sessionId;
+  callActive = true; holdSeconds = 0;
+
+  g('startBtn').disabled = true; g('stopBtn').disabled = false;
+  g('callDot').className = 'dot red'; g('callText').textContent = 'LIVE';
+  g('holdMsg').textContent = 'ARIA AI — please describe your emergency';
+  g('sysDot').className = 'dot red'; g('sysText').textContent = 'ARIA ACTIVE';
+  g('liveDot').className = 'dot green';
+  g('liveBarText').textContent = 'Browser speech → Claude analyzing → ticket updating live...';
+  g('sActive').textContent = '1'; g('sSaved').textContent = '0s';
+
+  holdInterval = setInterval(() => {
+    holdSeconds++;
+    const m = Math.floor(holdSeconds/60), s = holdSeconds%60;
+    g('holdTimer').textContent = `${m}:${String(s).padStart(2,'0')}`;
+    g('sSaved').textContent = Math.max(0, holdSeconds-8) + 's';
+  }, 1000);
+
+  audioCtx = new AudioContext();
+  const src = audioCtx.createMediaStreamSource(audioStream);
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 256;
+  dataArray = new Uint8Array(analyser.frequencyBinCount);
+  src.connect(analyser);
+  startLiveWave();
+  const GREETING = 'This is ARIA, your 911 AI intake assistant. All operators are currently busy. Please describe your emergency and I will alert a dispatcher immediately.';
+  addSys(`Session ${sessionId.slice(0,8)} — ARIA online — speaking greeting...`);
+  addLine('aria', GREETING, null);
+  setARIAText(GREETING);
+
+  // Speak greeting once via ElevenLabs, start Web Speech only after it finishes
+  speak(GREETING, () => {
+    addSys('Listening — speak now (browser speech recognition)');
+    startSpeechRecognition();
+  });
+}
+
+function startSpeechRecognition() {
+  if (!callActive) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    addSys('Speech recognition unavailable in this browser');
+    return;
+  }
+  if (speechRecognition) {
+    try { speechRecognition.stop(); } catch(e) {}
+  }
+  const recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  recognition.onresult = (event) => {
+    if (speechListenPaused || ttsSpeaking) return;
+    let newDelta = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      if (event.results[i].isFinal) {
+        newDelta += event.results[i][0].transcript + ' ';
+      }
+    }
+    if (newDelta) pendingTranscriptDelta += newDelta;
+  };
+  recognition.onerror = (ev) => { console.warn('[SpeechRecognition]', ev.error); };
+  recognition.onend = () => {
+    if (callActive && !speechListenPaused) {
+      try { recognition.start(); } catch(e) {}
+    }
+  };
+  speechRecognition = recognition;
+  speechListenPaused = false;
+  try { recognition.start(); } catch(e) {}
+
+  if (transcriptChunkTimer) clearInterval(transcriptChunkTimer);
+  transcriptChunkTimer = setInterval(() => {
+    const delta = pendingTranscriptDelta.trim();
+    if (delta) {
+      pendingTranscriptDelta = '';
+      void sendTranscriptChunk(delta);
+    }
+  }, 1000);
+}
+
+async function sendTranscriptChunk(delta) {
+  if (!sessionId || !callActive || !delta) return;
+  if (ttsSpeaking) {
+    pendingTranscriptDelta = (delta + ' ' + pendingTranscriptDelta).trim();
+    return;
+  }
+  try {
+    await fetch('/api/transcript/chunk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, transcriptDelta: delta })
+    });
+  } catch(e) { console.error('[TRANSCRIPT CHUNK]', e); }
+}
+
+// ── CALL STOP ─────────────────────────────────────────────────────────────────
+async function stopCall() {
+  callActive = false;
+  speechListenPaused = true;
+  clearInterval(holdInterval);
+  if (transcriptChunkTimer) { clearInterval(transcriptChunkTimer); transcriptChunkTimer = null; }
+  try { speechRecognition?.stop(); } catch(e) {}
+  speechRecognition = null;
+  const flush = pendingTranscriptDelta.trim();
+  pendingTranscriptDelta = '';
+  if (flush && sessionId) {
+    try {
+      await fetch('/api/transcript/chunk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, transcriptDelta: flush })
+      });
+    } catch(e) { console.error('[TRANSCRIPT FLUSH]', e); }
+  }
+  audioStream?.getTracks().forEach(t => t.stop());
+  try { audioCtx?.close(); } catch(e) {}
+  if(waveAnim) cancelAnimationFrame(waveAnim);
+  await fetch('/api/session/end', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({sessionId}) });
+  g('startBtn').disabled = false; g('stopBtn').disabled = true; g('reportBtn').disabled = false;
+  g('callDot').className = 'dot green'; g('callText').textContent = 'Call Ended';
+  g('sysDot').className = 'dot green'; g('sysText').textContent = 'ONLINE';
+  g('liveBarText').textContent = 'Call ended — click Report to generate AI incident report';
+  g('processingBadge').classList.remove('show');
+  initWave();
+  addSys('Call ended — click 📋 Report to generate full incident report');
+}
+
+// ── TICKET UI ─────────────────────────────────────────────────────────────────
+function buildTicket(ticket) {
+  g('emptyState')?.remove();
+  const body = g('opBody');
+  const el = document.createElement('div');
+  el.className = 'ticket'; el.id = 'mainTicket';
+  el.innerHTML = `
+    <div class="ticket-top">
+      <div>
+        <div class="ticket-id">INC # ${ticket.incidentId}</div>
+        <div class="ticket-type" id="tType">Intake in progress...</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+        <div class="pbadge INTAKE" id="pBadge">● INTAKE</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-muted)" id="tAge">Just now</div>
+      </div>
+    </div>
+    <div class="ticket-body">
+      <div class="fields-grid">
+        <div><div class="field-lbl">Location</div><div class="field-val empty" id="fLocation">Awaiting...</div></div>
+        <div><div class="field-lbl">Incident Type</div><div class="field-val empty" id="fType">Awaiting...</div></div>
+        <div><div class="field-lbl">Victims / Patients</div><div class="field-val empty" id="fVictims">Awaiting...</div></div>
+        <div><div class="field-lbl">Injuries</div><div class="field-val empty" id="fInjuries">Awaiting...</div></div>
+        <div><div class="field-lbl">Hazards</div><div class="field-val empty" id="fHazards">None detected</div></div>
+        <div><div class="field-lbl">Medical History</div><div class="field-val empty" id="fMedical">Awaiting...</div></div>
+        <div><div class="field-lbl">Caller Name</div><div class="field-val empty" id="fCaller">Awaiting...</div></div>
+        <div><div class="field-lbl">Language</div><div class="field-val empty" id="fLang">Detecting...</div></div>
+        <div style="grid-column:1/-1"><div class="field-lbl">Dispatch Status</div><div class="field-val empty" id="fDispatch">INTAKE IN PROGRESS</div></div>
+      </div>
+      <div id="flagsWrap" style="display:none">
+        <div class="field-lbl" style="margin-bottom:6px">Key Flags</div>
+        <div class="flags-row" id="flagsRow"></div>
+      </div>
+      <div class="trans-panel" id="transPanel">
+        <div class="trans-lbl">Auto-Translation Active</div>
+        <div id="transLines"></div>
+      </div>
+      <div>
+        <div class="field-lbl" style="margin-bottom:8px">Severity Analysis</div>
+        <div class="sev-item"><div class="sev-name">Life Threat</div><div class="sev-track"><div class="sev-fill red" id="sLT" style="width:0%"></div></div><div class="sev-pct" id="sLTp">0%</div></div>
+        <div class="sev-item"><div class="sev-name">Response Urgency</div><div class="sev-track"><div class="sev-fill amber" id="sU" style="width:0%"></div></div><div class="sev-pct" id="sUp">0%</div></div>
+        <div class="sev-item"><div class="sev-name">Location Confidence</div><div class="sev-track"><div class="sev-fill green" id="sLC" style="width:0%"></div></div><div class="sev-pct" id="sLCp">0%</div></div>
+        <div class="sev-item"><div class="sev-name">Info Completeness</div><div class="sev-track"><div class="sev-fill blue" id="sIC" style="width:0%"></div></div><div class="sev-pct" id="sICp">0%</div></div>
+      </div>
+      <div>
+        <div class="field-lbl" style="margin-bottom:8px">Incident Timeline</div>
+        <div id="tlWrap">
+          ${TL.map((l,i)=>`
+          <div class="tl-item">
+            <div class="tl-spine"><div class="tl-dot${i===0?' active':''}" id="td${i}"></div>${i<TL.length-1?'<div class="tl-line"></div>':''}</div>
+            <div class="tl-txt${i===0?' active':''}" id="tt${i}">${l}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div class="dispatch-rec" id="dispRec" style="display:none">
+        <div class="dispatch-rec-lbl">AI Dispatch Recommendation</div>
+        <div id="dispRecTxt"></div>
+      </div>
+    </div>
+    <div class="ticket-actions">
+      <button class="t-act red">🚨 Dispatch Now</button>
+      <button class="t-act green" onclick="generateReport()">📋 Report</button>
+      <button class="t-act">📞 Join Call</button>
+      <button class="t-act">↗ Escalate</button>
+    </div>`;
+  body.appendChild(el);
+  let age=0;
+  setInterval(()=>{ age++; const el=g('tAge'); if(el) el.textContent=age<60?`${age}s ago`:`${Math.floor(age/60)}m ago`; },1000);
+}
+
+function updateTicket(ticket) {
+  if (!ticket) return;
+  function set(id, val) {
+    const el = g(id); if(!el||!val) return;
+    el.textContent = val; el.className = 'field-val new';
+    setTimeout(()=>el.className='field-val', 2500);
+  }
+  set('fLocation', ticket.location); set('fType', ticket.type);
+  set('fVictims', ticket.victims); set('fInjuries', ticket.injuries);
+  set('fHazards', ticket.hazards); set('fMedical', ticket.medicalHistory);
+  set('fCaller', ticket.callerName); set('fLang', ticket.language);
+  set('fDispatch', ticket.dispatchStatus);
+  if(ticket.type) { const el=g('tType'); if(el) el.textContent=ticket.type; }
+  if(ticket.priority) {
+    const el=g('pBadge');
+    if(el){ el.className=`pbadge ${ticket.priority}`; el.textContent=`● ${ticket.priority}`; }
+    const card=g('mainTicket');
+    if(card) card.className=`ticket ${ticket.priority}`;
+  }
+}
+
+function updateSev(scores) {
+  if(!scores) return;
+  function s(fId,pId,val){ const f=g(fId),p=g(pId); if(f)f.style.width=val+'%'; if(p)p.textContent=Math.round(val)+'%'; }
+  s('sLT','sLTp',scores.lifeThreat||0);
+  s('sU','sUp',scores.urgency||0);
+  s('sLC','sLCp',scores.locationConfidence||0);
+  s('sIC','sICp',scores.infoCompleteness||0);
+}
+
+function updateTL(step) {
+  if(step===undefined||step===null) return;
+  for(let i=0;i<=step;i++){
+    const d=g(`td${i}`),t=g(`tt${i}`);
+    if(d)d.className='tl-dot done'; if(t)t.className='tl-txt done';
+  }
+  const nd=g(`td${step+1}`),nt=g(`tt${step+1}`);
+  if(nd)nd.className='tl-dot active'; if(nt)nt.className='tl-txt active';
+}
+
+function updateFlags(flags) {
+  if(!flags?.length) return;
+  const w=g('flagsWrap'), r=g('flagsRow'); if(!w||!r) return;
+  w.style.display='block';
+  r.innerHTML=flags.map(f=>`<div class="flag-chip">⚑ ${f}</div>`).join('');
+}
+
+function setDispatchRec(rec) {
+  const el=g('dispRec'),txt=g('dispRecTxt');
+  if(el&&txt){ el.style.display='block'; txt.textContent=rec; }
+}
+
+function showTrans(orig, translated) {
+  const panel=g('transPanel'), lines=g('transLines'); if(!panel||!lines) return;
+  panel.classList.add('show');
+  g('transChip').style.display='flex';
+  const d=document.createElement('div'); d.className='trans-line';
+  d.innerHTML=`<span class="trans-orig">Original: "${orig}"</span><br><span class="trans-en">→ EN: "${translated}"</span>`;
+  lines.appendChild(d);
+}
+
+// ── TRANSCRIPT ────────────────────────────────────────────────────────────────
+function addLine(role, text, translated) {
+  const box=g('transcript');
+  const div=document.createElement('div');
+  const time=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  if(role==='caller'){
+    div.className='t-caller';
+    div.innerHTML=`<span class="t-time">[${time}]</span> <span class="t-tag">CALLER:</span> ${esc(text)}`;
+    if(translated && translated!==text){
+      box.appendChild(div);
+      const td=document.createElement('div'); td.className='t-trans';
+      td.textContent=`→ EN: "${translated}"`;
+      box.appendChild(td); box.scrollTop=box.scrollHeight; return;
+    }
+  } else {
+    div.className='t-aria';
+    div.innerHTML=`<span class="t-time">[${time}]</span> <span class="t-tag">ARIA:</span> ${esc(text)}`;
+  }
+  box.appendChild(div); box.scrollTop=box.scrollHeight;
+}
+
+function addSys(text) {
+  const box=g('transcript');
+  const div=document.createElement('div'); div.className='t-sys';
+  div.textContent='// '+text;
+  box.appendChild(div); box.scrollTop=box.scrollHeight;
+}
+
+// setARIAText just updates UI — no speak() call (speak is called explicitly)
+function setARIAText(text) {
+  if(!text) return;
+  g('ariaText').textContent=text;
+  const a=g('speakAnim'); a.style.display='inline-flex';
+  setTimeout(()=>a.style.display='none', 4000);
+}
+
+// setARIA updates UI AND speaks — used for follow-up responses
+function setARIA(text) {
+  if(!text) return;
+  setARIAText(text);
+  speak(text);
+}
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── TTS TOGGLE ────────────────────────────────────────────────────────────────
+function toggleTTS() {
+  ttsEnabled = !ttsEnabled;
+  const btn = g('ttsBtn');
+  if (!ttsEnabled) {
+    window.speechSynthesis.cancel();
+    btn.textContent = '🔇 Voice OFF';
+    btn.style.opacity = '0.5';
+  } else {
+    btn.textContent = '🔊 Voice ON';
+    btn.style.opacity = '1';
+  }
+}
+
+// ── REPORT ────────────────────────────────────────────────────────────────────
+async function generateReport() {
+  g('reportOverlay').classList.add('show');
+  g('reportContent').textContent = 'Generating full incident report with Claude AI...\n\nThis takes about 10-15 seconds.';
+  g('reportMeta').textContent = `Session ${sessionId?.slice(0,8)||'—'}`;
+  try {
+    const res = await fetch('/api/report/generate', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({sessionId})
+    });
+    const data = await res.json();
+    lastReport = data.report;
+    g('reportContent').textContent = data.report;
+    g('reportMeta').textContent = `Incident ${data.incidentId} · ${new Date().toLocaleTimeString()}`;
+  } catch(e) {
+    g('reportContent').textContent = 'Error: ' + e.message;
+  }
+}
+function closeReport(){ g('reportOverlay').classList.remove('show'); }
+function copyReport(){ navigator.clipboard.writeText(lastReport); }
+</script>
+</body>
+</html>
