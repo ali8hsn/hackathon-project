@@ -151,9 +151,16 @@ export default function MapView({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const markersRef = useRef<any[]>([]);
 
-  // Resolve effective pin set (new API wins; otherwise derive from center+count)
+  // Resolve effective pin set. We distinguish three caller intents:
+  //   (a) `pins` not provided  → fall back to the legacy synthetic pins so
+  //       older static maps (centre + count) keep working
+  //   (b) `pins=[]`             → caller explicitly says "no pins" — show an
+  //       empty map (e.g. the live monitor before any calls land). Without
+  //       this branch we'd silently invent fake pins at the default centre,
+  //       which mis-implies that something is happening
+  //   (c) `pins=[...]`          → use exactly what the caller passed
   const effectivePins: MapPin[] =
-    pins && pins.length > 0
+    pins !== undefined
       ? pins
       : Array.from({ length: Math.max(1, pinCount) }, (_, i) => {
           const c = parseCenter(center);

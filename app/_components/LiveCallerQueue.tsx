@@ -159,6 +159,9 @@ function CallerCard({
   // Top-rank card glows amber so it visually pops out of the grid; the rest
   // get a slightly desaturated background + dimmed border so the eye lands
   // on #1 first. Border colour also stays in sync with `ready` state.
+  // Top-rank card glows amber to grab the eye. Non-top cards stay readable —
+  // we mute via background/border tints rather than container opacity, which
+  // would also dim the text and tank contrast.
   const cardStyle: React.CSSProperties = isTop
     ? {
         background:
@@ -169,16 +172,17 @@ function CallerCard({
       }
     : {
         background:
-          "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0))",
+          "linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0))",
         borderColor: isReady
           ? "rgba(232,40,26,0.22)"
           : "rgba(255,255,255,0.08)",
-        opacity: 0.92, // a touch muted vs. #1
       };
 
+  // overflow-visible so the #1 card's pulsing halo can spill outside the
+  // rounded border without being clipped at the corners.
   return (
     <div
-      className="relative rounded-2xl border px-5 py-4 overflow-hidden transition-all"
+      className="relative rounded-2xl border px-5 py-4 transition-all"
       style={cardStyle}
     >
       {/* Top row: rank badge ─ status/phone ─ priority + elapsed */}
@@ -199,11 +203,7 @@ function CallerCard({
               </span>
             )}
           </div>
-          <p
-            className={`text-[13px] font-mono font-semibold ${
-              isTop ? "text-on-surface" : "text-on-surface/85"
-            }`}
-          >
+          <p className="text-[13px] font-mono font-semibold text-on-surface">
             {caller.phone}
           </p>
         </div>

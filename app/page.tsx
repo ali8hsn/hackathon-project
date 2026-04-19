@@ -257,8 +257,18 @@ export default function HomePage() {
   const medCount = incidents.filter((i) => i.priority === "MEDIUM").length;
   const lowCount = incidents.filter((i) => i.priority === "LOW").length;
 
+  // Map pin click router. Pin ids are namespaced by source:
+  //   - `incident-<uuid>` rows in the feed correspond to incident pins → scroll
+  //   - `live:<sessionId>` and `cluster:<id>` are live phone calls → those
+  //     don't have feed rows on the homepage, so jump to /phone-calls instead
+  //     where the dispatcher can actually see + act on the call.
   const handlePinClick = useCallback((pin: MapPin) => {
-    const el = document.getElementById(`incident-${pin.id}`);
+    const id = String(pin.id || "");
+    if (id.startsWith("live:") || id.startsWith("cluster:")) {
+      window.location.href = "/phone-calls";
+      return;
+    }
+    const el = document.getElementById(`incident-${id}`);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
