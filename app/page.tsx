@@ -25,6 +25,7 @@ import LiveCallerQueue, {
   type LiveCaller,
 } from "./_components/LiveCallerQueue";
 import { useLivePhoneCallers } from "./_components/useLivePhoneCallers";
+import { useHighPriorityChime } from "./_components/useHighPriorityChime";
 
 // ─── Severity model ───────────────────────────────────────────────────────
 // Prefer the AI-detected severity stored on the incident (Gemini scorer in
@@ -154,6 +155,26 @@ export default function HomePage() {
       .map((i) => ({ incident: i, score: severityScore(i) }))
       .sort((a, b) => b.score - a.score);
   }, [incidents]);
+
+  // Keys for the chime hook — only HIGH/CRITICAL items are eligible to ding.
+  const highCallerKeys = useMemo(
+    () =>
+      liveCallers
+        .filter((c) => c.priority === "HIGH")
+        .map((c) => c.id),
+    [liveCallers]
+  );
+  const highIncidentKeys = useMemo(
+    () =>
+      incidents
+        .filter((i) => i.priority === "HIGH")
+        .map((i) => i.id),
+    [incidents]
+  );
+  useHighPriorityChime({
+    liveCallerKeys: highCallerKeys,
+    incidentKeys: highIncidentKeys,
+  });
 
   const pins = useMemo<MapPin[]>(() => {
     const incidentPins: MapPin[] = sorted

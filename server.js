@@ -69,6 +69,14 @@ const upload = multer({ dest: os.tmpdir() });
 let anthropicKey = process.env.ANTHROPIC_API_KEY || '';
 let anthropic = new Anthropic({ apiKey: anthropicKey });
 
+// ─── Global AI gate ─────────────────────────────────────────────────────────
+// `aiActive` controls whether Claude processes incoming transcript batches.
+// When the operator clicks the "AI Active / AI Idle" toggle in TopNav we POST
+// to /api/aria/ai/toggle which flips this flag. While idle, scheduleClaude…
+// returns immediately and we broadcast an `ai_skipped` event so the UI can
+// show greyed-out chips.
+let aiActive = true;
+
 const sessions = {};
 /** Twilio CallSid → ARIA sessionId (multiple concurrent calls supported). */
 const twilioCallSidToSessionId = Object.create(null);
@@ -195,8 +203,24 @@ ariaApp.get('/status', (req, res) => {
     status: 'online',
     whisper: whisperInstalled,
     anthropic: hasKey,
+    aiActive,
     activeSessions: Object.keys(sessions).filter(k => sessions[k].callActive).length
   });
+});
+
+/**
+ * Toggle the global AI gate. Body: `{ active: boolean }`. When `aiActive`
+ * is false, scheduleClaudeProcessing short-circuits and broadcasts
+ * `ai_skipped` events so the UI can render greyed-out states.
+ */
+ariaApp.post('/ai/toggle', (req, res) => {
+  const next = req.body && Object.prototype.hasOwnProperty.call(req.body, 'active')
+    ? !!req.body.active
+    : !aiActive;
+  aiActive = next;
+  console.log(`[AI] toggle → ${aiActive ? 'ACTIVE' : 'IDLE'}`);
+  broadcast({ type: 'ai_state', active: aiActive });
+  res.json({ active: aiActive });
 });
 
 /**
@@ -468,6 +492,13 @@ function scheduleClaudeProcessing(sessionId, englishText) {
   if (!session) return;
   const piece = (englishText || '').trim();
   if (!piece) return;
+
+  // Honour the global AI gate. When idle we still ack the transcript so the
+  // dispatcher can read the raw words, we just don't burn a Claude call.
+  if (!aiActive) {
+    broadcast({ type: 'ai_skipped', sessionId, reason: 'paused' });
+    return;
+  }
 
   session._claudePending = session._claudePending
     ? `${session._claudePending} ${piece}`

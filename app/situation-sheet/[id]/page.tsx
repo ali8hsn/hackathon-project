@@ -437,6 +437,7 @@ export default function SituationSheetPage() {
   const [reportText, setReportText] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [regenToast, setRegenToast] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -493,6 +494,8 @@ export default function SituationSheetPage() {
 
   const handleRegenerateReport = useCallback(async () => {
     setIsRegenerating(true);
+    setRegenToast(null);
+    let ok = false;
     try {
       const res = await fetch(`/api/incidents/${incidentId}`, {
         method: "PATCH",
@@ -503,11 +506,19 @@ export default function SituationSheetPage() {
         const updated = await res.json();
         setIncident(updated);
         setReportText(updated.aiReport || updated.ai_report || "");
+        ok = true;
       }
     } catch {
-      /* Offline — no-op */
+      /* Offline — toast below will surface the failure */
     }
     setIsRegenerating(false);
+    setRegenToast(
+      ok
+        ? "Report regenerated — fresh dispatch recommendation ready"
+        : "Report regeneration failed — try again in a moment"
+    );
+    // Auto-dismiss after a few seconds; user can re-trigger anytime.
+    setTimeout(() => setRegenToast(null), 4500);
   }, [incidentId]);
 
   const handleCopy = useCallback(async () => {
@@ -739,6 +750,9 @@ export default function SituationSheetPage() {
         ))}
       </div>
 
+      {/* ── Regenerate toast ─────────────────────────────────────────────── */}
+      {regenToast && <RegenToast text={regenToast} onClose={() => setRegenToast(null)} />}
+
       {/* ── Main Content ────────────────────────────────────────────────── */}
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 overflow-y-auto">
@@ -845,9 +859,14 @@ export default function SituationSheetPage() {
                   className="w-full h-[560px] bg-surface-low border border-outline-variant/20 rounded-2xl p-6 text-[13px] leading-relaxed text-on-surface font-mono resize-none focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand/40"
                 />
               ) : (
-                <article className="bg-surface-low rounded-2xl border border-outline-variant/10 px-8 py-8 shadow-[0_1px_0_0_rgba(255,255,255,0.02)_inset] print:bg-white print:text-black print:border-0 print:shadow-none print:px-0">
-                  {reportText ? (
-                    <div className="prose prose-invert max-w-none">
+                <article className="bg-surface-low rounded-2xl border border-outline-variant/10 px-8 py-8 shadow-[0_1px_0_0_rgba(255,255,255,0.02)_inset] print:bg-white print:text-black print:border-0 print:shadow-none print:px-0 relative overflow-hidden">
+                  {isRegenerating ? (
+                    <ReportShimmer />
+                  ) : reportText ? (
+                    <div
+                      key={reportText.length}
+                      className="prose prose-invert max-w-none siren-fade-in"
+                    >
                       {renderMarkdown(reportText)}
                     </div>
                   ) : (
@@ -859,7 +878,7 @@ export default function SituationSheetPage() {
                         auto_awesome
                       </span>
                       <p className="text-sm text-on-surface-variant mb-4">
-                        No AI report yet. Click Regenerate to synthesize one
+                        No AI report yet. Click Generate to synthesize one
                         from the live transcript.
                       </p>
                       <button
@@ -867,7 +886,7 @@ export default function SituationSheetPage() {
                         disabled={isRegenerating}
                         className="px-4 py-2 bg-brand text-white rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-brand-dark transition-colors disabled:opacity-50"
                       >
-                        {isRegenerating ? "Generating…" : "Generate Report"}
+                        Generate Report
                       </button>
                     </div>
                   )}
@@ -1541,6 +1560,131 @@ function DispatchBanner({
           }
         }
       `}</style>
+    </div>
+  );
+}
+
+// ─── Report shimmer skeleton (Phase 5) ──────────────────────────────────────
+// Renders a violet shimmer over the report panel while Claude streams the new
+// markdown. Bars vary in width to feel like real paragraphs being written.
+function ReportShimmer() {
+  const bars = [
+    "85%",
+    "72%",
+    "92%",
+    "60%",
+    "48%",
+    "78%",
+    "65%",
+    "88%",
+  ];
+  return (
+    <div
+      className="flex flex-col gap-3"
+      role="status"
+      aria-label="Generating AI report"
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <span
+          className="material-symbols-outlined text-[18px]"
+          style={{ color: "#a78bfa", fontVariationSettings: "'FILL' 1" }}
+        >
+          auto_awesome
+        </span>
+        <span
+          className="text-[10px] font-black uppercase tracking-[0.22em]"
+          style={{ color: "#a78bfa" }}
+        >
+          Streaming dispatch recommendation…
+        </span>
+      </div>
+      {bars.map((w, i) => (
+        <div
+          key={i}
+          className="h-3 rounded-full siren-shimmer"
+          style={{ width: w }}
+        />
+      ))}
+      <style jsx>{`
+        :global(.siren-shimmer) {
+          background: linear-gradient(
+            90deg,
+            rgba(167, 139, 250, 0.10) 0%,
+            rgba(167, 139, 250, 0.30) 30%,
+            rgba(221, 214, 254, 0.55) 50%,
+            rgba(167, 139, 250, 0.30) 70%,
+            rgba(167, 139, 250, 0.10) 100%
+          );
+          background-size: 220% 100%;
+          animation: siren-shimmer-slide 1.6s linear infinite;
+        }
+        :global(.siren-fade-in) {
+          animation: siren-fade-in 220ms ease-out both;
+        }
+        @keyframes siren-shimmer-slide {
+          from {
+            background-position: 220% 0;
+          }
+          to {
+            background-position: -220% 0;
+          }
+        }
+        @keyframes siren-fade-in {
+          from {
+            opacity: 0;
+            transform: translateY(2px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ─── Regenerate completion toast (Phase 5) ──────────────────────────────────
+function RegenToast({
+  text,
+  onClose,
+}: {
+  text: string;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="absolute left-1/2 top-3 -translate-x-1/2 z-30 print:hidden"
+      style={{ pointerEvents: "auto" }}
+    >
+      <div
+        className="flex items-center gap-2 px-4 py-2 rounded-full siren-fade-in"
+        style={{
+          background: "linear-gradient(180deg,#7c3aed 0%,#5b21b6 100%)",
+          color: "#ffffff",
+          border: "1px solid rgba(167,139,250,0.45)",
+          boxShadow: "0 8px 24px -10px rgba(124,58,237,0.55)",
+        }}
+      >
+        <span
+          className="material-symbols-outlined text-[16px]"
+          style={{ fontVariationSettings: "'FILL' 1" }}
+        >
+          check_circle
+        </span>
+        <span className="text-[12px] font-bold tracking-tight">{text}</span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Dismiss"
+          className="ml-2 -mr-1 inline-flex items-center justify-center w-5 h-5 rounded-full transition-colors"
+          style={{ background: "rgba(255,255,255,0.15)" }}
+        >
+          <span className="material-symbols-outlined text-[12px]">close</span>
+        </button>
+      </div>
     </div>
   );
 }

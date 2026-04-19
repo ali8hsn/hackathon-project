@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAppState, useAppDispatch } from "../_lib/store";
+import SettingsPanel from "./SettingsPanel";
 
 const pageLabels: Record<string, { eyebrow: string; title: string }> = {
   "/": { eyebrow: "Overview", title: "Siren AI" },
@@ -18,6 +19,48 @@ export default function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
   const isHome = pathname === "/";
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const gearRef = useRef<HTMLButtonElement | null>(null);
+
+  // Hydrate the AI toggle from server state once on mount so reloads don't
+  // desync the badge from the actual gate.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/aria/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        if (typeof data.aiActive === "boolean") {
+          dispatch({ type: "SET_HAASHIR_ASSIST", payload: data.aiActive });
+        }
+      })
+      .catch(() => {
+        // Network blip — keep whatever the optimistic default is.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatch]);
+
+  const onToggleAi = useCallback(async () => {
+    const next = !haashirAssistEnabled;
+    // Flip locally first for responsiveness; revert if the server rejects.
+    dispatch({ type: "SET_HAASHIR_ASSIST", payload: next });
+    try {
+      const res = await fetch("/api/aria/ai/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: next }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (typeof data?.active === "boolean" && data.active !== next) {
+        dispatch({ type: "SET_HAASHIR_ASSIST", payload: data.active });
+      }
+    } catch {
+      dispatch({ type: "SET_HAASHIR_ASSIST", payload: !next });
+    }
+  }, [haashirAssistEnabled, dispatch]);
 
   // Detect scroll so the nav can shift from transparent (over cream hero) to
   // dark glass (once the dashboard is in view). On non-home pages the nav is
@@ -107,7 +150,9 @@ export default function TopNav() {
 
       <div className="flex items-center gap-3">
         <button
-          onClick={() => dispatch({ type: "TOGGLE_HAASHIR_ASSIST" })}
+          onClick={onToggleAi}
+          aria-pressed={haashirAssistEnabled}
+          aria-label={haashirAssistEnabled ? "AI active — click to pause" : "AI idle — click to resume"}
           className="group px-3.5 py-1.5 rounded-full flex items-center gap-2 border transition-all duration-300"
           style={{
             background: haashirAssistEnabled
@@ -152,6 +197,39 @@ export default function TopNav() {
           </span>
         </button>
 
+        <button
+          ref={gearRef}
+          type="button"
+          onClick={() => setSettingsOpen((o) => !o)}
+          aria-label="Open settings"
+          aria-expanded={settingsOpen}
+          className="w-8 h-8 rounded-full border flex items-center justify-center transition-colors"
+          style={{
+            background: settingsOpen
+              ? "rgba(167, 139, 250, 0.16)"
+              : onCream
+                ? "rgba(10, 10, 15, 0.04)"
+                : "rgba(255, 255, 255, 0.04)",
+            borderColor: settingsOpen
+              ? "rgba(167, 139, 250, 0.45)"
+              : onCream
+                ? "rgba(10, 10, 15, 0.1)"
+                : "rgba(255, 255, 255, 0.1)",
+            color: settingsOpen
+              ? "#a78bfa"
+              : onCream
+                ? "rgba(10,10,15,0.55)"
+                : "rgba(255,255,255,0.55)",
+          }}
+        >
+          <span
+            className="material-symbols-outlined text-[18px]"
+            style={{ fontVariationSettings: "'FILL' 0" }}
+          >
+            settings
+          </span>
+        </button>
+
         <div
           className="h-6 w-px"
           style={{
@@ -176,6 +254,14 @@ export default function TopNav() {
           <span className="material-symbols-outlined text-[16px]">person</span>
         </div>
       </div>
+
+      {settingsOpen && (
+        <SettingsPanel
+          onCream={onCream}
+          anchor={gearRef.current}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </header>
   );
 }
