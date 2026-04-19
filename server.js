@@ -1,33 +1,38 @@
+/**
+ * Unified server: Next.js (Sentinel UI + API) + Express (ARIA intake + WebSocket)
+ * Dev:   npm run dev
+ * Prod:  npm run build && npm start
+ */
 require('dotenv').config();
-const express = require('express');
-const http = require('http');
-const WebSocket = require('ws');
-const multer = require('multer');
-const Anthropic = require('@anthropic-ai/sdk');
-const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
+const { parse } = require('url');
+const express = require('express');
+const WebSocket = require('ws');
+const multer = require('multer');
+const next = require('next');
+const Anthropic = require('@anthropic-ai/sdk');
+const { v4: uuidv4 } = require('uuid');
 const os = require('os');
 const { exec, execSync } = require('child_process');
 
-const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const dev = process.env.NODE_ENV !== 'production';
+const nextApp = next({ dev, dir: __dirname });
+const handle = nextApp.getRequestHandler();
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-
+const ariaApp = express();
+ariaApp.use(express.json({ limit: '4mb' }));
 const upload = multer({ dest: os.tmpdir() });
 
-// ── ANTHROPIC CLIENT ─────────────────────────────────────────────────────────
 let anthropicKey = process.env.ANTHROPIC_API_KEY || '';
 let anthropic = new Anthropic({ apiKey: anthropicKey });
 
-// ── SESSION STORE ─────────────────────────────────────────────────────────────
 const sessions = {};
+let wss;
 
-// ── HELPERS ───────────────────────────────────────────────────────────────────
 function broadcast(data) {
+  if (!wss) return;
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify(data));
@@ -44,16 +49,8 @@ function checkWhisper() {
   }
 }
 
-// ── WEBSOCKET ─────────────────────────────────────────────────────────────────
-wss.on('connection', (ws) => {
-  console.log('[WS] Client connected');
-  ws.send(JSON.stringify({ type: 'connected', message: 'ARIA system online' }));
-  ws.on('close', () => console.log('[WS] Client disconnected'));
-});
-
-// ── CONFIGURE (runtime key from browser) ─────────────────────────────────────
-app.post('/api/configure', (req, res) => {
-  const { anthropicKey: key } = req.body;
+ariaApp.post('/configure', (req, res) => {
+  const { anthropicKey: key } = req.body || {};
   if (!key || !key.startsWith('sk-ant-')) {
     return res.status(400).json({ error: 'Invalid Anthropic key format' });
   }
@@ -63,8 +60,7 @@ app.post('/api/configure', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── STATUS ────────────────────────────────────────────────────────────────────
-app.get('/api/status', (req, res) => {
+ariaApp.get('/status', (req, res) => {
   const whisperInstalled = checkWhisper();
   const hasKey = !!(anthropicKey || process.env.ANTHROPIC_API_KEY);
   res.json({
@@ -75,8 +71,14 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// ── SESSION START ─────────────────────────────────────────────────────────────
-app.post('/api/session/start', (req, res) => {
+/** Optional keys for /intake auto-launch (same host only; do not expose this app publicly without auth). */
+ariaApp.get('/bootstrap', (req, res) => {
+  res.json({
+    elevenLabsKey: (process.env.ELEVENLABS_API_KEY || '').trim()
+  });
+});
+
+ariaApp.post('/session/start', (req, res) => {
   const sessionId = uuidv4();
   sessions[sessionId] = {
     id: sessionId,
@@ -103,7 +105,6 @@ app.post('/api/session/start', (req, res) => {
   res.json({ sessionId, incidentId: sessions[sessionId].ticket.incidentId });
 });
 
-// ── INGEST CALLER TEXT (shared: Web Speech chunks or Whisper) ─────────────────
 async function ingestCallerText(sessionId, text) {
   const trimmed = (text || '').trim();
   if (!trimmed || trimmed.length < 2 || !sessions[sessionId]) return;
@@ -147,8 +148,7 @@ async function ingestCallerText(sessionId, text) {
   processWithClaude(sessionId, trimmed, translatedText || trimmed).catch(console.error);
 }
 
-// ── TRANSCRIPT CHUNK (browser Web Speech API) ─────────────────────────────────
-app.post('/api/transcript/chunk', async (req, res) => {
+ariaApp.post('/transcript/chunk', async (req, res) => {
   const { sessionId, transcriptDelta } = req.body || {};
   if (!sessionId || !sessions[sessionId]) {
     return res.status(404).json({ error: 'Session not found' });
@@ -166,8 +166,7 @@ app.post('/api/transcript/chunk', async (req, res) => {
   }
 });
 
-// ── TRANSCRIBE (local Whisper — optional fallback) ────────────────────────────
-app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
+ariaApp.post('/transcribe', upload.single('audio'), async (req, res) => {
   const { sessionId } = req.body;
   if (!req.file) return res.status(400).json({ error: 'No audio file' });
   if (!sessions[sessionId]) return res.status(404).json({ error: 'Session not found' });
@@ -231,7 +230,6 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   }
 });
 
-// ── CLAUDE AI ANALYSIS ────────────────────────────────────────────────────────
 async function processWithClaude(sessionId, rawText, englishText) {
   const session = sessions[sessionId];
   if (!session) return;
@@ -241,7 +239,7 @@ async function processWithClaude(sessionId, rawText, englishText) {
     .map(t => `[${t.role.toUpperCase()}]: ${t.translatedText || t.text}`)
     .join('\n');
 
-  const systemPrompt = `You are ARIA, an AI emergency intake assistant for Austin 911 dispatch. You have two jobs:
+  const systemPrompt = `You are Siren, an AI emergency intake assistant for Austin 911 dispatch. You have two jobs:
 1. Extract structured incident data from what the caller is saying
 2. Provide a calm, clear, helpful spoken response to guide the caller
 
@@ -294,7 +292,6 @@ All scores are 0-100. timelineStep is 0-4 (0=call received, 1=location found, 2=
 
     const parsed = JSON.parse(raw);
 
-    // Apply ticket updates
     const updates = parsed.ticketUpdates || {};
     Object.keys(updates).forEach(key => {
       if (updates[key] !== null && updates[key] !== undefined) {
@@ -302,7 +299,6 @@ All scores are 0-100. timelineStep is 0-4 (0=call received, 1=location found, 2=
       }
     });
 
-    // Store ARIA response in transcript
     if (parsed.ariaResponse) {
       session.transcript.push({
         role: 'aria',
@@ -332,15 +328,14 @@ All scores are 0-100. timelineStep is 0-4 (0=call received, 1=location found, 2=
   }
 }
 
-// ── INCIDENT REPORT ───────────────────────────────────────────────────────────
-app.post('/api/report/generate', async (req, res) => {
+ariaApp.post('/report/generate', async (req, res) => {
   const { sessionId } = req.body;
   const session = sessions[sessionId];
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
   const fullTranscript = session.transcript
     .map(t => {
-      const role = t.role === 'caller' ? 'CALLER' : 'ARIA AI';
+      const role = t.role === 'caller' ? 'CALLER' : 'SIREN AI';
       const translation = t.translatedText ? ` [Translated: "${t.translatedText}"]` : '';
       return `[${new Date(t.timestamp).toLocaleTimeString()}] ${role}: "${t.text}"${translation}`;
     })
@@ -375,7 +370,7 @@ Write a complete professional incident report with these sections:
 4. VICTIM / PATIENT INFORMATION
 5. NATURE OF EMERGENCY (detailed description)
 6. HAZARDS & SPECIAL CONSIDERATIONS
-7. ARIA AI ACTIONS TAKEN
+7. SIREN AI ACTIONS TAKEN
 8. DISPATCH RECOMMENDATION
 9. CHRONOLOGICAL TIMELINE (with timestamps)
 10. LANGUAGE & TRANSLATION NOTES (if applicable)
@@ -400,8 +395,7 @@ Be precise and professional. This will be used by dispatchers and first responde
   }
 });
 
-// ── SESSION END ───────────────────────────────────────────────────────────────
-app.post('/api/session/end', (req, res) => {
+ariaApp.post('/session/end', (req, res) => {
   const { sessionId } = req.body;
   if (sessions[sessionId]) {
     sessions[sessionId].callActive = false;
@@ -411,19 +405,54 @@ app.post('/api/session/end', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── START ─────────────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  const whisperOk = checkWhisper();
-  console.log(`
-╔══════════════════════════════════════════════╗
-║      ARIA 911 — AI Emergency Intake          ║
-║      Web Speech API + Claude Edition         ║
-║                                              ║
-║      http://localhost:${PORT}                   ║
-║                                              ║
-║  Whisper (optional /api/transcribe): ${whisperOk ? '✓ YES' : '○ not installed'}              ║
-║  Claude API key:    ${process.env.ANTHROPIC_API_KEY ? '✓ SET in .env' : '○ Enter in browser'}              ║
-╚══════════════════════════════════════════════╝
-  `);
+nextApp.prepare().then(() => {
+  const server = http.createServer((req, res) => {
+    const parsedUrl = parse(req.url, true);
+    const pathname = parsedUrl.pathname || '';
+
+    try {
+      if (pathname === '/intake' || pathname === '/intake/') {
+        const htmlPath = path.join(__dirname, 'public', 'intake', 'index.html');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return fs.createReadStream(htmlPath).pipe(res);
+      }
+
+      if (pathname.startsWith('/api/aria')) {
+        const u = req.url;
+        req.url = u.startsWith('/api/aria') ? (u.slice('/api/aria'.length) || '/') : u;
+        return ariaApp(req, res);
+      }
+
+      handle(req, res, parsedUrl);
+    } catch (err) {
+      console.error('[HTTP]', err);
+      res.statusCode = 500;
+      res.end('Internal Server Error');
+    }
+  });
+
+  // Dedicated path so Next.js dev (Turbopack/HMR) never shares the same upgrade as ARIA
+  wss = new WebSocket.Server({ server, path: '/ws-aria' });
+  wss.on('connection', (ws) => {
+    console.log('[WS] Client connected');
+    ws.send(JSON.stringify({ type: 'connected', message: 'Siren system online' }));
+    ws.on('close', () => console.log('[WS] Client disconnected'));
+  });
+
+  const PORT = process.env.PORT || 3000;
+  server.listen(PORT, () => {
+    const whisperOk = checkWhisper();
+    console.log(`
+╔══════════════════════════════════════════════════════╗
+║  Siren — voice intake + dispatch intelligence        ║
+║  http://localhost:${PORT}                             ║
+║    • Situations & tools: /                           ║
+║    • Voice intake:       /intake                     ║
+║  Whisper (optional): ${whisperOk ? 'yes' : 'no'}                          ║
+╚══════════════════════════════════════════════════════╝
+`);
+  });
+}).catch((err) => {
+  console.error('Failed to start:', err);
+  process.exit(1);
 });
