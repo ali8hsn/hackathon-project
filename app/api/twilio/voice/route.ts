@@ -46,7 +46,9 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   return Response.json({
     status: "ok",
-    endpoint: "Twilio Voice Webhook",
-    description: "Configure this URL as your Twilio phone number's voice webhook",
+    endpoint: "Legacy Next route — Siren phone AI uses unified server",
+    useInstead:
+      "POST https://<YOUR_HOST>/api/aria/twilio/voice (see server.js + .env.example PUBLIC_BASE_URL)",
+    dispatchLive: "/dispatch-live",
   });
 }

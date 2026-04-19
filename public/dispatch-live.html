@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Siren — Live dispatch (multi-call)</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <style>
+    :root { --bg:#09090b; --card:#18181b; --border:#27272a; --text:#fafafa; --muted:#a1a1aa; --green:#22c55e; --amber:#f59e0b; --red:#ef4444; --blue:#3b82f6; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; align-items: center; gap: 16px; justify-content: space-between; }
+    header h1 { font-size: 18px; font-weight: 600; margin: 0; }
+    header .sub { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); }
+    header a { color: var(--blue); text-decoration: none; font-size: 13px; }
+    .pill { font-family: 'IBM Plex Mono', monospace; font-size: 10px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+    .pill.ok { border-color: #166534; color: #86efac; }
+    .main { display: grid; grid-template-columns: 1fr 340px; gap: 16px; padding: 16px; max-width: 1600px; margin: 0 auto; }
+    @media (max-width: 1000px) { .main { grid-template-columns: 1fr; } }
+    .sessions { display: flex; flex-direction: column; gap: 12px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .card.phone { border-left: 3px solid var(--amber); }
+    .card.browser { border-left: 3px solid var(--blue); }
+    .card.ended { opacity: 0.55; }
+    .card-hdr { padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+    .card-hdr .id { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--muted); }
+    .badge { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
+    .badge.phone { background: #422006; color: #fcd34d; }
+    .badge.browser { background: #1e3a5f; color: #93c5fd; }
+    .card-body { padding: 12px 14px; font-size: 13px; line-height: 1.5; }
+    .ticket-row { display: grid; grid-template-columns: 100px 1fr; gap: 6px; margin-bottom: 6px; font-size: 12px; }
+    .ticket-row .k { color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: 10px; text-transform: uppercase; }
+    .log { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #d4d4d8; max-height: 140px; overflow-y: auto; white-space: pre-wrap; background: #0c0c0e; padding: 10px; border-radius: 6px; margin-top: 10px; }
+    .map-panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; min-height: 420px; }
+    .map-panel .mh { padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; }
+    #mapEl { flex: 1; min-height: 360px; border-radius: 0 0 10px 10px; z-index: 1; }
+    .empty { text-align: center; color: var(--muted); padding: 40px 20px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Live dispatch</h1>
+      <div class="sub">WebSocket <code>/ws-aria</code> — browser intake + Twilio phone calls</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span class="pill" id="wsPill">WS: …</span>
+      <a href="/intake">→ Voice intake</a>
+    </div>
+  </header>
+  <div class="main">
+    <div class="sessions" id="sessions"></div>
+    <div class="map-panel">
+      <div class="mh">Incident map (all active sessions)</div>
+      <div id="mapEl"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script>
+    const WS_PATH = '/ws-aria';
+    (function resolveAriaOrigin() {
+      const params = new URLSearchParams(window.location.search);
+      let o = (params.get('ariaOrigin') || params.get('origin') || '').trim().replace(/\/$/, '');
+      const meta = document.querySelector('meta[name="aria-origin"]');
+      if (!o && meta && meta.content) o = meta.content.trim().replace(/\/$/, '');
+      window.__ARIA_ORIGIN__ = o;
+    })();
+    function ariaOriginBase() {
+      return typeof window.__ARIA_ORIGIN__ === 'string' ? window.__ARIA_ORIGIN__ : '';
+    }
+    function wsUrl() {
+      const o = ariaOriginBase();
+      if (o) {
+        try {
+          const u = new URL(o);
+          const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+          return proto + '//' + u.host + WS_PATH;
+        } catch (e) {
+          console.warn('[dispatch-live] bad ariaOrigin', e);
+        }
+      }
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return proto + '//' + location.host + WS_PATH;
+    }
+    function ariaApi(path) {
+      const p = path.startsWith('/') ? path : '/' + path;
+      const o = ariaOriginBase();
+      return o ? o + p : p;
+    }
+    const sessions = new Map();
+    const mapPins = new Map();
+    let map = null;
+    const COLORS = ['#e11d48', '#2563eb', '#16a34a', '#ca8a04', '#9333ea', '#ea580c'];
+
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    }
+
+    function ensureMap() {
+      if (map || typeof L === 'undefined') return;
+      map = L.map('mapEl', { zoomControl: true }).setView([39.8283, -98.5795], 3);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OSM' }).addTo(map);
+      setTimeout(() => map.invalidateSize(), 300);
+    }
+
+    function pinSession(id, ticket) {
+      ensureMap();
+      const loc = (ticket && ticket.location || '').trim();
+      if (loc.length < 4) return;
+      const q = encodeURIComponent(loc);
+      fetch(ariaApi('/api/aria/geocode?q=' + q))
+        .then(r => r.json())
+        .then(data => {
+          if (data.lat == null || data.lon == null) return;
+          const idx = [...sessions.keys()].indexOf(id);
+          const color = COLORS[Math.abs(idx) % COLORS.length];
+          let m = mapPins.get(id);
+          const ll = [data.lat, data.lon];
+          if (m) {
+            m.setLatLng(ll);
+            m.setStyle({ color: '#111', fillColor: color, fillOpacity: 0.9, radius: 10, weight: 2 });
+          } else {
+            m = L.circleMarker(ll, { color: '#111', fillColor: color, fillOpacity: 0.9, radius: 10, weight: 2 }).addTo(map);
+            m.bindPopup('<div style="font-size:12px">' + esc(loc) + '</div>');
+            mapPins.set(id, m);
+          }
+          const bounds = L.latLngBounds([]);
+          mapPins.forEach(x => bounds.extend(x.getLatLng()));
+          if (bounds.isValid()) map.flyToBounds(bounds.pad(0.2), { duration: 1.4, maxZoom: 14 });
+        })
+        .catch(() => {});
+    }
+
+    function cardEl(sid) {
+      return document.getElementById('card-' + sid);
+    }
+
+    function appendLog(sid, line) {
+      const el = cardEl(sid);
+      if (!el) return;
+      const log = el.querySelector('.log');
+      if (log) log.textContent += (log.textContent ? '\n' : '') + line;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function upsertCard(msg) {
+      const sid = msg.sessionId;
+      if (!sid) return;
+      const wrap = document.getElementById('sessions');
+      const empty = wrap.querySelector('.empty');
+      if (empty) empty.remove();
+
+      let st = sessions.get(sid) || { ticket: {}, log: [] };
+      if (msg.ticket) st.ticket = msg.ticket;
+      if (msg.channel) st.channel = msg.channel;
+      sessions.set(sid, st);
+
+      let el = cardEl(sid);
+      const ch = msg.channel || st.channel || 'browser';
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'card-' + sid;
+        el.className = 'card ' + (ch === 'phone' ? 'phone' : 'browser');
+        el.innerHTML = `
+          <div class="card-hdr">
+            <div>
+              <span class="badge ${ch === 'phone' ? 'phone' : 'browser'}">${ch === 'phone' ? 'Phone' : 'Browser'}</span>
+              <div class="id">${esc(sid.slice(0, 12))}…</div>
+              <div class="id phone-meta" style="margin-top:4px"></div>
+            </div>
+            <div class="id pri"></div>
+          </div>
+          <div class="card-body">
+            <div class="ticket"></div>
+            <div class="log"></div>
+          </div>`;
+        document.getElementById('sessions').prepend(el);
+      }
+      st.channel = ch;
+      if (msg.from) el.querySelector('.phone-meta').textContent = 'From: ' + msg.from;
+      if (msg.twilioCallSid) el.querySelector('.phone-meta').textContent += ' · Call ' + msg.twilioCallSid.slice(0, 10) + '…';
+
+      const t = st.ticket;
+      el.querySelector('.ticket').innerHTML = `
+        <div class="ticket-row"><span class="k">Incident</span><span>${esc(t.incidentId || '—')}</span></div>
+        <div class="ticket-row"><span class="k">Priority</span><span>${esc(t.priority || '—')}</span></div>
+        <div class="ticket-row"><span class="k">Location</span><span>${esc(t.location || '—')}</span></div>
+        <div class="ticket-row"><span class="k">Type</span><span>${esc(t.type || '—')}</span></div>`;
+      el.querySelector('.pri').textContent = t.priority || '—';
+      pinSession(sid, t);
+    }
+
+    function handleMsg(raw) {
+      const msg = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      switch (msg.type) {
+        case 'connected':
+          document.getElementById('wsPill').textContent = 'WS: connected';
+          document.getElementById('wsPill').classList.add('ok');
+          break;
+        case 'session_start':
+          upsertCard({ sessionId: msg.sessionId, ticket: msg.ticket, channel: msg.channel, from: msg.from, twilioCallSid: msg.twilioCallSid });
+          appendLog(msg.sessionId, '[session started]');
+          break;
+        case 'transcription':
+          upsertCard({
+            sessionId: msg.sessionId,
+            channel: msg.channel,
+            ticket: sessions.get(msg.sessionId)?.ticket
+          });
+          const tx = msg.translatedText && msg.translatedText !== msg.text ? msg.translatedText : msg.text;
+          appendLog(msg.sessionId, 'Caller: ' + tx);
+          break;
+        case 'ai_analysis':
+          upsertCard(msg);
+          if (msg.ariaResponse) appendLog(msg.sessionId, 'Siren: ' + msg.ariaResponse);
+          break;
+        case 'session_end': {
+          const el = cardEl(msg.sessionId);
+          if (el) { el.classList.add('ended'); appendLog(msg.sessionId, '[call ended]'); }
+          break;
+        }
+        case 'error':
+          if (msg.sessionId) appendLog(msg.sessionId, '[error] ' + (msg.message || ''));
+          break;
+        default:
+          break;
+      }
+    }
+
+    const remote = ariaOriginBase();
+    if (remote) {
+      const el = document.querySelector('header .sub');
+      if (el) el.textContent = 'WS → ' + remote + ' (NEXT_PUBLIC_ARIA_ORIGIN)';
+    }
+    const ws = new WebSocket(wsUrl());
+    ws.onopen = () => { document.getElementById('wsPill').textContent = 'WS: open'; document.getElementById('wsPill').classList.add('ok'); };
+    ws.onmessage = (e) => { try { handleMsg(e.data); } catch (err) { console.warn(err); } };
+    ws.onclose = () => { document.getElementById('wsPill').textContent = 'WS: disconnected'; document.getElementById('wsPill').classList.remove('ok'); };
+
+    if (!document.getElementById('sessions').children.length) {
+      document.getElementById('sessions').innerHTML = '<div class="empty">Waiting for sessions… Open <a href="/intake" style="color:#60a5fa">/intake</a> or call your Twilio number. Split deploy: set <code style="color:#93c5fd">NEXT_PUBLIC_ARIA_ORIGIN</code> to your API URL.</div>';
+    }
+  </script>
+</body>
+</html>
