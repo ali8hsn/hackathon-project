@@ -13,7 +13,7 @@ MongoDB setup (Haashir + ARIA unified app)
     (or your Atlas connection string)
 
 • Optional:
-    MONGODB_DB_NAME=sentinel    # legacy default — kept so existing data stays accessible
+    MONGODB_DB_NAME=siren
 
 • Collections are created automatically when you ingest the first incident.
 `);

@@ -48,7 +48,7 @@ Permissions: `root:siren` / mode `640`. Symlinked to `/opt/siren/app/.env`.
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Ali Hussain | Claude AI for incident triage |
 | `MONGODB_URI` | Haashir (Atlas cluster: `haashcluster`) | Free M0 Atlas cluster |
-| `MONGODB_DB_NAME` | — | `sentinel` (legacy default — kept so existing live data stays addressable) |
+| `MONGODB_DB_NAME` | — | `siren` |
 | `ELEVENLABS_API_KEY` | Ali Hussain | Voice synthesis for intake |
 | `TWILIO_ACCOUNT_SID` | — | Not configured — Twilio webhooks are manual (see below) |
 | `TWILIO_AUTH_TOKEN` | — | Not configured |

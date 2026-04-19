@@ -10,7 +10,7 @@
  * Skips incidents that already have a `severity_score`.
  *
  * Requirements:
- *   - Env: MONGODB_URI, MONGODB_DB_NAME (optional, defaults to "sentinel"),
+ *   - Env: MONGODB_URI, MONGODB_DB_NAME (optional, defaults to "siren"),
  *          GEMINI_API_KEY
  *
  * Usage:
@@ -104,7 +104,7 @@ async function main() {
     console.error("ERROR: MONGODB_URI not set");
     process.exit(1);
   }
-  const dbName = process.env.MONGODB_DB_NAME || "sentinel";
+  const dbName = process.env.MONGODB_DB_NAME || "siren";
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     console.warn("WARN: GEMINI_API_KEY not set — falling back to heuristic for all rows.");

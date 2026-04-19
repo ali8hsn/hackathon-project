@@ -28,7 +28,7 @@ export async function getMongoClient(): Promise<MongoClient> {
 }
 
 export function getDb(): Promise<Db> {
-  return getMongoClient().then((c) => c.db(process.env.MONGODB_DB_NAME || "sentinel"));
+  return getMongoClient().then((c) => c.db(process.env.MONGODB_DB_NAME || "siren"));
 }
 
 export async function getIncidentsCollection(): Promise<Collection<IncidentDoc>> {

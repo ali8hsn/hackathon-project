@@ -213,7 +213,7 @@ Create `/etc/siren/siren.env` (ask Ali for each value as needed):
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 MONGODB_URI=mongodb+srv://...
-MONGODB_DB_NAME=sentinel
+MONGODB_DB_NAME=siren
 PORT=3000
 NODE_ENV=production
 # optional
