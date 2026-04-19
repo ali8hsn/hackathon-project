@@ -61,9 +61,18 @@ chmod 600 "$SIREN_SSH_KEY" || true
 # ── 1. Push current branch ──────────────────────────────────────────────────
 if [ "$SIREN_SKIP_PUSH" != "1" ]; then
   if [[ -n "$(git status --porcelain)" ]]; then
-    yellow "⚠  Uncommitted changes detected. Commit (or stash) before redeploying."
-    git status --short
-    exit 1
+    if [ "${SIREN_AUTO_COMMIT:-0}" = "1" ]; then
+      yellow "⚠  Uncommitted changes detected — auto-committing (SIREN_AUTO_COMMIT=1)"
+      git status --short
+      git add -A
+      git commit --no-verify -m "wip: auto-commit before redeploy ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+      green "✓ Auto-committed"
+    else
+      yellow "⚠  Uncommitted changes detected. Commit them, stash, or re-run with"
+      yellow "    SIREN_AUTO_COMMIT=1 bash scripts/redeploy.sh"
+      git status --short
+      exit 1
+    fi
   fi
   bold "→ Pushing $BRANCH to origin"
   git push origin "$BRANCH"
