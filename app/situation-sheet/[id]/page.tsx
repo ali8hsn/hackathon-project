@@ -553,21 +553,44 @@ export default function SituationSheetPage() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    async function fetchIncident() {
+    let cancelled = false;
+    // Race-tolerant fetch. ScenarioLab + the Twilio cluster auto-merge can
+    // navigate to /situation-sheet/<id> the instant the POST to /api/incidents
+    // resolves — but Mongo's `insertIncident` write may not be visible to a
+    // follow-up read for ~50-300ms (Atlas read-after-write secondary lag).
+    // Instead of immediately rendering the bleak "Incident Not Found" panel,
+    // poll up to 6 times with backoff before giving up.
+    async function fetchWithRetry() {
       setLoading(true);
-      try {
-        const res = await fetch(`/api/incidents/${incidentId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setIncident(data);
-          setReportText(data.aiReport || data.ai_report || "");
+      const delays = [0, 350, 600, 900, 1400, 2000]; // total ≈ 5.25s
+      for (const delay of delays) {
+        if (cancelled) return;
+        if (delay > 0) {
+          await new Promise((r) => setTimeout(r, delay));
+          if (cancelled) return;
         }
-      } catch {
-        /* Backend not available */
+        try {
+          const res = await fetch(`/api/incidents/${incidentId}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && (data.id || data._id)) {
+              setIncident(data);
+              setReportText(data.aiReport || data.ai_report || "");
+              setLoading(false);
+              return;
+            }
+          }
+        } catch {
+          /* network blip — retry */
+        }
       }
-      setLoading(false);
+      // All retries exhausted — let the not-found UI render.
+      if (!cancelled) setLoading(false);
     }
-    fetchIncident();
+    fetchWithRetry();
+    return () => {
+      cancelled = true;
+    };
   }, [incidentId]);
 
   // Auto-fire browser print when the page is opened with ?print=1 — lets
@@ -702,15 +725,27 @@ export default function SituationSheetPage() {
             Incident Not Found
           </h2>
           <p className="text-sm text-on-surface-variant mb-6">
-            The incident you&apos;re looking for doesn&apos;t exist or
-            couldn&apos;t be loaded.
+            We couldn&apos;t load this incident. It may still be processing in
+            the background — give it a few seconds and try again.
           </p>
-          <Link
-            href="/"
-            className="px-4 py-2 bg-brand text-white rounded-lg text-sm font-bold"
-          >
-            Back to Monitor
-          </Link>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-brand text-white rounded-lg text-sm font-bold"
+            >
+              Retry
+            </button>
+            <Link
+              href="/reports"
+              className="px-4 py-2 border border-outline-variant/40 text-on-surface rounded-lg text-sm font-bold"
+            >
+              Back to Reports
+            </Link>
+          </div>
+          <p className="mt-6 text-[10px] font-mono text-on-surface-variant/60">
+            id: {incidentId}
+          </p>
         </div>
       </div>
     );
