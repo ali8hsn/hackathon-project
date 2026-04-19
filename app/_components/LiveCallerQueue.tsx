@@ -3,8 +3,15 @@
 // ─── Live Caller Queue ──────────────────────────────────────────────────────
 // Shows calls currently being processed by Siren intake.
 // Fields populate over time as the AI extracts them from the transcript.
+//
+// Triage queue ordering:
+//   We score every active caller and sort high→low so the dispatcher always
+//   knows which call to pick up next. Score blends priority bucket (the AI's
+//   coarse HIGH/MEDIUM/LOW signal) with seconds on hold, so within a tier the
+//   caller who has been waiting longest floats up. The top-ranked card glows
+//   amber; the rest are visually muted so the eye lands on #1 first.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Incident } from "../_lib/types";
 
@@ -38,18 +45,47 @@ function secondsSince(ms: number): string {
   return `${m}:${r.toString().padStart(2, "0")}`;
 }
 
+// Pick-next score. Bigger = take this call first.
+//   • Priority weight dominates so a HIGH always beats a MEDIUM regardless of
+//     time waited — that matches operator intuition.
+//   • Within the same priority bucket, +1 per second on hold so the longest-
+//     waiting caller floats up. A "ringing" call gets a small bonus so brand-
+//     new connections don't sit at the bottom on tie-breakers.
+function pickNextScore(c: LiveCaller): number {
+  const priorityWeight =
+    c.priority === "HIGH"
+      ? 10000
+      : c.priority === "MEDIUM"
+        ? 5000
+        : c.priority === "LOW"
+          ? 1000
+          : 2500; // unknown → between MEDIUM and LOW
+  const elapsed = Math.max(0, Math.floor((Date.now() - c.startedAt) / 1000));
+  const ringingBonus = c.status === "ringing" ? 50 : 0;
+  return priorityWeight + elapsed + ringingBonus;
+}
+
 export default function LiveCallerQueue({
   callers,
   title = "Active Call Queue",
   subtitle,
   demoActive,
 }: Props) {
-  // tick every second so elapsed counters update
-  const [, setTick] = useState(0);
+  // tick every second so elapsed counters + queue ranks stay current
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
+
+  // Rank callers by pick-next score so the dispatcher sees a clear ordering.
+  // Recompute every tick because elapsed seconds feed the score (within a
+  // priority bucket the longest-waiting caller floats up).
+  const ranked = useMemo(() => {
+    const scored = callers.map((c) => ({ caller: c, score: pickNextScore(c) }));
+    scored.sort((a, b) => b.score - a.score);
+    return scored.map((s, i) => ({ caller: s.caller, rank: i + 1 }));
+  }, [callers, tick]);
 
   return (
     <section className="mb-8">
@@ -93,8 +129,13 @@ export default function LiveCallerQueue({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {callers.map((c) => (
-            <CallerCard key={c.id} caller={c} />
+          {ranked.map(({ caller, rank }) => (
+            <CallerCard
+              key={caller.id}
+              caller={caller}
+              rank={rank}
+              total={ranked.length}
+            />
           ))}
         </div>
       )}
@@ -102,22 +143,50 @@ export default function LiveCallerQueue({
   );
 }
 
-function CallerCard({ caller }: { caller: LiveCaller }) {
+function CallerCard({
+  caller,
+  rank,
+  total,
+}: {
+  caller: LiveCaller;
+  rank: number;
+  total: number;
+}) {
   const isReady = caller.status === "ready";
   const isRinging = caller.status === "ringing";
+  const isTop = rank === 1;
+
+  // Top-rank card glows amber so it visually pops out of the grid; the rest
+  // get a slightly desaturated background + dimmed border so the eye lands
+  // on #1 first. Border colour also stays in sync with `ready` state.
+  const cardStyle: React.CSSProperties = isTop
+    ? {
+        background:
+          "linear-gradient(180deg, rgba(245,158,11,0.12), rgba(24,24,34,0.9))",
+        borderColor: "rgba(245,158,11,0.55)",
+        boxShadow:
+          "0 0 0 1px rgba(245,158,11,0.18), 0 14px 40px -18px rgba(245,158,11,0.45)",
+      }
+    : {
+        background:
+          "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0))",
+        borderColor: isReady
+          ? "rgba(232,40,26,0.22)"
+          : "rgba(255,255,255,0.08)",
+        opacity: 0.92, // a touch muted vs. #1
+      };
 
   return (
     <div
-      className={`relative rounded-2xl border bg-gradient-to-br from-surface-low to-surface-lowest px-5 py-4 overflow-hidden transition-all ${
-        isReady
-          ? "border-brand/30 shadow-[0_0_0_1px_rgba(232,40,26,0.14)]"
-          : "border-outline-variant/15"
-      }`}
+      className="relative rounded-2xl border px-5 py-4 overflow-hidden transition-all"
+      style={cardStyle}
     >
-      {/* Top: status + phone + elapsed */}
-      <div className="flex items-start justify-between mb-3">
+      {/* Top row: rank badge ─ status/phone ─ priority + elapsed */}
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3 items-start mb-3">
+        <RankBadge rank={rank} total={total} isTop={isTop} />
+
         <div className="min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <StatusPill status={caller.status} />
             {caller.channel === "browser" && (
               <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest bg-tertiary-container/40 text-tertiary border border-tertiary/30">
@@ -129,21 +198,36 @@ function CallerCard({ caller }: { caller: LiveCaller }) {
                 {caller.language.toUpperCase()}
               </span>
             )}
-            {caller.priority && (
-              <PriorityPill priority={caller.priority} />
-            )}
           </div>
-          <p className="text-[13px] font-mono font-semibold text-on-surface">
+          <p
+            className={`text-[13px] font-mono font-semibold ${
+              isTop ? "text-on-surface" : "text-on-surface/85"
+            }`}
+          >
             {caller.phone}
           </p>
         </div>
-        <div className="text-right shrink-0">
-          <p className="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant">
-            Elapsed
-          </p>
-          <p className="text-sm font-mono font-black text-on-surface leading-none mt-1">
-            {secondsSince(caller.startedAt)}
-          </p>
+
+        <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
+          {caller.priority && <PriorityPill priority={caller.priority} />}
+          <div>
+            <p
+              className="text-[9px] font-bold uppercase tracking-widest"
+              style={{
+                color: isTop ? "#fbbf24" : "rgba(255,255,255,0.5)",
+              }}
+            >
+              On call
+            </p>
+            <p
+              className="text-base font-mono font-black tabular-nums leading-none mt-1"
+              style={{
+                color: isTop ? "#fbbf24" : "rgba(255,255,255,0.78)",
+              }}
+            >
+              {secondsSince(caller.startedAt)}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -233,6 +317,68 @@ function CallerCard({ caller }: { caller: LiveCaller }) {
           LIVE
         </span>
       </div>
+    </div>
+  );
+}
+
+// Big "pick this one next" badge. #1 is a vivid amber chip with a pulsing
+// halo so it's the first thing a dispatcher's eye catches; ranks 2..N are a
+// muted dark chip with dim text so they recede into the background.
+function RankBadge({
+  rank,
+  total,
+  isTop,
+}: {
+  rank: number;
+  total: number;
+  isTop: boolean;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-1 shrink-0 w-12 pt-0.5">
+      <div className="relative">
+        {isTop && (
+          <span
+            className="absolute inset-0 rounded-full animate-ping opacity-40"
+            style={{ background: "#f59e0b" }}
+            aria-hidden
+          />
+        )}
+        <span
+          className="relative inline-flex items-center justify-center h-10 w-10 rounded-full font-display font-black tabular-nums"
+          style={
+            isTop
+              ? {
+                  background: "#fbbf24",
+                  color: "#1a0f00",
+                  boxShadow:
+                    "0 0 0 2px rgba(245,158,11,0.45), 0 6px 18px -4px rgba(245,158,11,0.55)",
+                  fontSize: 19,
+                  letterSpacing: -0.5,
+                }
+              : {
+                  background: "rgba(255,255,255,0.06)",
+                  color: "rgba(255,255,255,0.55)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  fontSize: 16,
+                }
+          }
+          title={
+            isTop
+              ? "Take this call first — highest pick-next score"
+              : `Position ${rank} of ${total} in the triage queue`
+          }
+        >
+          {rank}
+        </span>
+      </div>
+      <span
+        className="text-[8.5px] font-bold uppercase tracking-[0.16em]"
+        style={{
+          color: isTop ? "#fbbf24" : "rgba(255,255,255,0.35)",
+        }}
+      >
+        {isTop ? "Next up" : `#${rank}`}
+      </span>
     </div>
   );
 }
