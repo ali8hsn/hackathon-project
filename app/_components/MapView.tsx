@@ -18,6 +18,10 @@ export interface MapPin {
   label?: string;
   severity?: number; // 1..10
   active?: boolean;
+  /** Override the severity-derived color (e.g. amber for live phone calls). */
+  color?: string;
+  /** Optional small line shown under `label` in the popup. */
+  sublabel?: string;
 }
 
 interface MapViewProps {
@@ -236,7 +240,7 @@ export default function MapView({
       for (const pin of effectivePins) {
         if (typeof pin.lat !== "number" || typeof pin.lng !== "number")
           continue;
-        const color = severityColor(pin.severity);
+        const color = pin.color || severityColor(pin.severity);
 
         const el = document.createElement("div");
         el.className = "siren-pin";
@@ -288,9 +292,16 @@ export default function MapView({
               `<div style="font-family:Inter,system-ui;font-size:12px;color:#e2e6f0;padding:4px 2px;">
                  <div style="font-weight:700;margin-bottom:2px;">${pin.label}</div>
                  ${
+                   pin.sublabel
+                     ? `<div style="font-size:10px;color:rgba(226,230,240,0.7);margin-bottom:2px;">${pin.sublabel}</div>`
+                     : ""
+                 }
+                 ${
                    pin.severity
                      ? `<div style="font-size:10px;color:${color};font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Severity ${pin.severity}/10</div>`
-                     : ""
+                     : pin.color
+                       ? `<div style="font-size:10px;color:${color};font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Live call</div>`
+                       : ""
                  }
                </div>`
             )

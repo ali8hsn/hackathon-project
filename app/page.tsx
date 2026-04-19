@@ -21,7 +21,10 @@ import Link from "next/link";
 import type { Incident } from "./_lib/types";
 import MapView, { type MapPin } from "./_components/MapView";
 import DemoController from "./_components/DemoController";
-import type { LiveCaller } from "./_components/LiveCallerQueue";
+import LiveCallerQueue, {
+  type LiveCaller,
+} from "./_components/LiveCallerQueue";
+import { useLivePhoneCallers } from "./_components/useLivePhoneCallers";
 
 // ─── Severity model ───────────────────────────────────────────────────────
 // Prefer the AI-detected severity stored on the incident (Gemini scorer in
@@ -126,6 +129,7 @@ export default function HomePage() {
   const [, setDemoCaller] = useState<LiveCaller | null>(null);
   const [, setDemoSpotlight] = useState<string | undefined>(undefined);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const { callers: liveCallers, pins: livePins } = useLivePhoneCallers();
 
   useEffect(() => {
     async function fetchIncidents() {
@@ -152,7 +156,7 @@ export default function HomePage() {
   }, [incidents]);
 
   const pins = useMemo<MapPin[]>(() => {
-    return sorted
+    const incidentPins: MapPin[] = sorted
       .filter(({ incident }) => {
         const { lat, lng } = incident.coordinates || {};
         return (
@@ -170,7 +174,20 @@ export default function HomePage() {
         severity: score,
         active: hoveredId === incident.id,
       }));
-  }, [sorted, hoveredId]);
+    // Live phone calls render in amber so dispatchers visually distinguish
+    // an active caller from a saved incident. They drop off the map when
+    // session_end fires and reappear (with severity color) once the call
+    // is persisted to MongoDB on the next /api/incidents poll.
+    const phonePins: MapPin[] = livePins.map((p) => ({
+      id: `live:${p.sessionId}`,
+      lat: p.lat,
+      lng: p.lng,
+      label: p.phone,
+      sublabel: p.ticket?.type || p.ticket?.location || undefined,
+      color: "#f59e0b",
+    }));
+    return [...incidentPins, ...phonePins];
+  }, [sorted, hoveredId, livePins]);
 
   const highCount = incidents.filter((i) => i.priority === "HIGH").length;
   const medCount = incidents.filter((i) => i.priority === "MEDIUM").length;
@@ -402,6 +419,15 @@ export default function HomePage() {
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_520px] gap-6 items-start">
             {/* FEED */}
             <div>
+              {liveCallers.length > 0 && (
+                <div className="mb-6">
+                  <LiveCallerQueue
+                    callers={liveCallers}
+                    title="Live calls"
+                    subtitle="Twilio numbers · streaming as the AI extracts details"
+                  />
+                </div>
+              )}
               <div className="flex items-center gap-3 mb-4">
                 <span
                   className="h-px flex-1"
@@ -415,6 +441,9 @@ export default function HomePage() {
                   style={{ color: "rgba(255,255,255,0.45)" }}
                 >
                   Active situations · {sorted.length}
+                  {liveCallers.length > 0
+                    ? ` · ${liveCallers.length} live`
+                    : ""}
                 </span>
                 <span
                   className="h-px flex-1"

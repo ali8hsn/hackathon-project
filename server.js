@@ -173,6 +173,15 @@ ariaApp.get('/status', (req, res) => {
   });
 });
 
+/**
+ * Lightweight configuration probe used by /intake to decide whether to render
+ * the setup overlay at all. Returns ONLY a boolean — never the key itself —
+ * so it's safe to expose without auth.
+ */
+ariaApp.get('/configure-status', (req, res) => {
+  res.json({ configured: !!(anthropicKey || process.env.ANTHROPIC_API_KEY) });
+});
+
 /** Optional keys for /intake auto-launch (same host only; do not expose this app publicly without auth). */
 ariaApp.get('/bootstrap', (req, res) => {
   res.json({

@@ -20,7 +20,17 @@
 body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;}
 
 /* SETUP */
-.setup-overlay{position:fixed;inset:0;background:rgba(10,10,11,0.97);z-index:200;display:flex;align-items:center;justify-content:center;}
+.setup-overlay{position:fixed;inset:0;background:rgba(10,10,11,0.97);z-index:200;display:none;align-items:center;justify-content:center;}
+.setup-overlay.show{display:flex;}
+.mass-event-banner{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:180;max-width:760px;width:calc(100% - 32px);display:flex;align-items:center;gap:14px;padding:12px 16px;background:linear-gradient(135deg,#7f1d1d,#dc2626);color:#fff;border-radius:14px;box-shadow:0 10px 32px rgba(127,29,29,0.55),0 0 0 1px rgba(255,255,255,0.08);font-family:'Inter',system-ui,sans-serif;animation:meSlideIn 0.32s ease-out;}
+.mass-event-banner[hidden]{display:none !important;}
+.mass-event-banner .me-icon{font-size:22px;line-height:1;flex-shrink:0;}
+.mass-event-banner .me-text{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0;}
+.mass-event-banner .me-title{font-size:13px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;}
+.mass-event-banner .me-sub{font-size:13px;font-weight:500;line-height:1.4;color:rgba(255,255,255,0.92);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mass-event-banner .me-dismiss{background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.18);color:#fff;font-size:14px;line-height:1;width:30px;height:30px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s;}
+.mass-event-banner .me-dismiss:hover{background:rgba(255,255,255,0.22);}
+@keyframes meSlideIn{from{opacity:0;transform:translateX(-50%) translateY(-8px);}to{opacity:1;transform:translateX(-50%) translateY(0);}}
 .setup-card{background:var(--surface);border:1px solid var(--border2);border-radius:14px;padding:36px 40px;max-width:480px;width:90%;}
 .setup-card h1{font-family:var(--display);font-size:28px;font-weight:800;margin-bottom:6px;}
 .setup-card h1 span{color:var(--red);}
@@ -266,6 +276,16 @@ canvas#wave{width:100%;height:52px;border-radius:6px;background:var(--surface2);
       ElevenLabs key → elevenlabs.io → your profile icon → API Key
     </div>
   </div>
+</div>
+
+<!-- MASS-EVENT BANNER (hidden until 3+ callers cluster on same incident) -->
+<div id="massEventBanner" class="mass-event-banner" role="alert" aria-live="polite" hidden>
+  <span class="me-icon" aria-hidden="true">⚠</span>
+  <div class="me-text">
+    <span class="me-title" id="massEventTitle">Mass event detected</span>
+    <span class="me-sub" id="massEventSub"></span>
+  </div>
+  <button type="button" class="me-dismiss" id="massEventDismiss" aria-label="Dismiss mass-event alert">✕</button>
 </div>
 
 <!-- TOPBAR -->
@@ -578,35 +598,196 @@ async function initSystem() {
   }
 }
 
-/** Skip setup when server already has ANTHROPIC_API_KEY in .env; optional ELEVENLABS_API_KEY via /bootstrap */
+/**
+ * Setup-overlay flow.
+ *
+ * The overlay defaults to display:none (see .setup-overlay rule). This
+ * function decides whether to *ever* show it, so end users never see a
+ * flash of "enter your Claude API key" copy on page load — the previous
+ * behaviour leaked an internal-config UI to callers.
+ *
+ * Order:
+ *   1. Probe /api/aria/configure-status (boolean only, no secrets).
+ *   2. If configured → silently auto-launch.
+ *   3. If NOT configured AND ?setup=1 is in the URL → show the dispatcher
+ *      setup overlay (admin entry point).
+ *   4. Otherwise → render a friendly "Service unavailable, contact your
+ *      dispatch admin" panel; never offer the API-key input to a caller.
+ */
 async function tryAutoLaunchFromEnv() {
   const params = new URLSearchParams(location.search);
-  if (params.get('setup') === '1' || params.get('setup') === 'true') return;
+  const adminSetup = params.get('setup') === '1' || params.get('setup') === 'true';
   const statusEl = g('setupStatus');
+  let configured = false;
   try {
-    const [statusRes, bootRes] = await Promise.all([
-      fetch('/api/aria/status'),
-      fetch('/api/aria/bootstrap')
-    ]);
-    const data = await statusRes.json();
-    const boot = await bootRes.json();
-    if (!data.anthropic) return;
-    if (boot.elevenLabsKey) setElevenKey(String(boot.elevenLabsKey).trim());
+    const r = await fetch('/api/aria/configure-status');
+    if (r.ok) {
+      const j = await r.json();
+      configured = !!j.configured;
+    }
+  } catch (_) {
+    /* network error — fall through to admin/unavailable branch */
+  }
+
+  if (configured && !adminSetup) {
+    try {
+      const bootRes = await fetch('/api/aria/bootstrap');
+      const boot = await bootRes.json();
+      if (boot.elevenLabsKey) setElevenKey(String(boot.elevenLabsKey).trim());
+    } catch (_) { /* optional voice keys */ }
     const hasSR = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
     if (!hasSR) {
+      g('setupOverlay').classList.add('show');
       statusEl.textContent = '✗ Web Speech API not available — use Chrome, Edge, or Safari';
       statusEl.className = 'setup-status err';
       return;
     }
-    statusEl.textContent = '✓ Loaded API keys from server (.env)';
-    statusEl.className = 'setup-status ok';
-    setTimeout(finishSetup, 400);
-  } catch (e) {
-    /* keep manual setup */
+    finishSetup();
+    return;
+  }
+
+  // From here on we WILL show the overlay. Tailor the copy to the audience:
+  // dispatcher-admin (?setup=1) gets the key entry form; everyone else gets
+  // a sealed "service unavailable" notice with no secret-key input visible.
+  g('setupOverlay').classList.add('show');
+  if (adminSetup) {
+    statusEl.textContent = configured
+      ? '✓ Server already configured — you can launch directly'
+      : 'Enter the dispatch admin key to bring this node online';
+    return;
+  }
+  // Public/caller path: hide every input + the launch button, show a notice.
+  const card = document.querySelector('.setup-card');
+  if (card) {
+    card.querySelectorAll('.input-group').forEach(n => { n.style.display = 'none'; });
+    const btn = g('setupBtn');
+    if (btn) btn.style.display = 'none';
+    statusEl.textContent = 'Siren Voice is offline. Contact your dispatch admin to bring this node online.';
+    statusEl.className = 'setup-status err';
+    const note = document.querySelector('.setup-note');
+    if (note) note.style.display = 'none';
   }
 }
 
 document.addEventListener('DOMContentLoaded', tryAutoLaunchFromEnv);
+
+// ── MASS-EVENT TRACKER ───────────────────────────────────────────────────────
+// Watches every active session on the WebSocket (across phone + browser
+// channels) and surfaces a top banner when 3+ distinct sessions cluster on
+// the same incident type at a similar location. Dismissals persist for the
+// browser tab so a dispatcher doesn't get re-notified for the same cluster.
+const MASS_EVENT_THRESHOLD = 3;
+const massEventSessions = new Map();   // sessionId -> { type, location, lastSeen }
+const massEventDismissed = new Set(JSON.parse(sessionStorage.getItem('siren.massEventDismissed') || '[]'));
+let massEventActiveKey = null;
+
+function persistDismissed() {
+  try {
+    sessionStorage.setItem('siren.massEventDismissed', JSON.stringify([...massEventDismissed]));
+  } catch (_) { /* sessionStorage may be blocked */ }
+}
+
+/** Normalise a free-text location into a stable cluster signature. */
+function locationSignature(loc) {
+  if (!loc) return '';
+  return String(loc)
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .slice(0, 3)
+    .join(' ');
+}
+
+function clusterKey(sess) {
+  const type = (sess.type || 'unknown').toLowerCase().trim();
+  const locSig = locationSignature(sess.location);
+  if (!locSig) return null;
+  return `${type}|${locSig}`;
+}
+
+function recomputeMassEvent() {
+  const now = Date.now();
+  // Prune sessions stale > 3 minutes (call probably ended without session_end).
+  for (const [sid, sess] of massEventSessions) {
+    if (now - sess.lastSeen > 180000) massEventSessions.delete(sid);
+  }
+  const buckets = new Map(); // key -> { type, location, sessionIds:Set }
+  for (const [sid, sess] of massEventSessions) {
+    const key = clusterKey(sess);
+    if (!key) continue;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { key, type: sess.type, location: sess.location, sessionIds: new Set() };
+      buckets.set(key, bucket);
+    }
+    bucket.sessionIds.add(sid);
+  }
+  let largest = null;
+  for (const bucket of buckets.values()) {
+    if (bucket.sessionIds.size >= MASS_EVENT_THRESHOLD && !massEventDismissed.has(bucket.key)) {
+      if (!largest || bucket.sessionIds.size > largest.sessionIds.size) {
+        largest = bucket;
+      }
+    }
+  }
+  if (largest) {
+    showMassEventBanner(largest);
+  } else {
+    hideMassEventBanner();
+  }
+}
+
+function showMassEventBanner(bucket) {
+  const banner = g('massEventBanner');
+  const sub = g('massEventSub');
+  if (!banner || !sub) return;
+  if (massEventActiveKey === bucket.key && !banner.hidden) {
+    sub.textContent = `${bucket.sessionIds.size} callers reporting ${bucket.type || 'an incident'} near ${bucket.location || 'unknown location'}`;
+    return;
+  }
+  massEventActiveKey = bucket.key;
+  sub.textContent = `${bucket.sessionIds.size} callers reporting ${bucket.type || 'an incident'} near ${bucket.location || 'unknown location'}`;
+  banner.hidden = false;
+}
+
+function hideMassEventBanner() {
+  const banner = g('massEventBanner');
+  if (!banner) return;
+  if (!banner.hidden) banner.hidden = true;
+  massEventActiveKey = null;
+}
+
+function trackMassEvent(msg) {
+  if (!msg || typeof msg !== 'object' || !msg.sessionId) return;
+  if (msg.type === 'session_end') {
+    massEventSessions.delete(msg.sessionId);
+    recomputeMassEvent();
+    return;
+  }
+  const ticket = msg.ticket || (massEventSessions.get(msg.sessionId) || {});
+  const next = {
+    type: ticket.type || massEventSessions.get(msg.sessionId)?.type || null,
+    location: ticket.location || massEventSessions.get(msg.sessionId)?.location || null,
+    lastSeen: Date.now()
+  };
+  massEventSessions.set(msg.sessionId, next);
+  recomputeMassEvent();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = g('massEventDismiss');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      if (massEventActiveKey) {
+        massEventDismissed.add(massEventActiveKey);
+        persistDismissed();
+      }
+      hideMassEventBanner();
+    });
+  }
+});
 
 // ── WEBSOCKET (dedicated path — avoids fighting Next.js dev tooling on `/`) ──
 const WS_PATH = '/ws-aria';
@@ -619,7 +800,11 @@ function connectWS() {
   ws.onopen = () => addSys('WebSocket connected — dispatcher console live');
   ws.onmessage = (e) => {
     try {
-      handleMsg(JSON.parse(e.data));
+      const parsed = JSON.parse(e.data);
+      // Mass-event tracker runs BEFORE the per-session filter so it can
+      // observe every active call (including parallel phone sessions).
+      trackMassEvent(parsed);
+      handleMsg(parsed);
     } catch (err) {
       console.warn('[WS] message error', err);
     }

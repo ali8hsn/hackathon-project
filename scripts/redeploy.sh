@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # ─── Siren AI · one-shot redeploy ───────────────────────────────────────────
-# Run from your Mac. Pushes the current branch to GitHub, SSHs into the EC2
-# box documented in DEPLOY_NOTES.md, pulls the latest code, installs deps,
-# rebuilds, kills *every* node process so we can guarantee one PM2 instance,
-# then re-starts the `siren` process and saves the PM2 process list.
+# Run from your Mac. Pushes the current branch to GitHub (as a backup), then
+# rsyncs the LOCAL working tree into /opt/siren/app on the EC2 box, installs
+# deps, rebuilds, kills *every* node process to guarantee a single PM2
+# instance, restarts the `siren` process, and saves the PM2 process list.
+#
+# Why rsync (not git pull on the box)?
+#   /opt/siren/app is not a git checkout — the original deploy was rsync'd
+#   because the GitHub repo is/was private. Rsync also lets you deploy local
+#   uncommitted experiments without a round-trip through GitHub.
 #
 # Idempotent — safe to run repeatedly. After it exits cleanly, exactly one
 # PM2 process named `siren` will be running on the box.
@@ -19,7 +24,9 @@
 #   SIREN_APP_USER  — defaults to siren
 #   SIREN_PM2_NAME  — defaults to siren
 #   SIREN_BRANCH    — defaults to current branch
-#   SIREN_SKIP_PUSH — set to "1" to skip `git push` (useful when running on the box)
+#   SIREN_SKIP_PUSH — set to "1" to skip `git push` to origin (rsync still runs)
+#   SIREN_DIRTY     — set to "1" to rsync even with uncommitted changes
+#                     (default: warn but proceed; the .env on the box is preserved)
 
 set -euo pipefail
 
@@ -58,7 +65,7 @@ if [ ! -f "$SIREN_SSH_KEY" ]; then
 fi
 chmod 600 "$SIREN_SSH_KEY" || true
 
-# ── 1. Push current branch ──────────────────────────────────────────────────
+# ── 1. Optional push to origin (backup; rsync below is the source of truth) ─
 if [ "$SIREN_SKIP_PUSH" != "1" ]; then
   if [[ -n "$(git status --porcelain)" ]]; then
     if [ "${SIREN_AUTO_COMMIT:-0}" = "1" ]; then
@@ -67,31 +74,61 @@ if [ "$SIREN_SKIP_PUSH" != "1" ]; then
       git add -A
       git commit --no-verify -m "wip: auto-commit before redeploy ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
       green "✓ Auto-committed"
+    elif [ "${SIREN_DIRTY:-0}" = "1" ]; then
+      yellow "⚠  Uncommitted changes — proceeding (SIREN_DIRTY=1; will not push to origin)"
+      git status --short
+      SIREN_SKIP_PUSH=1
     else
-      yellow "⚠  Uncommitted changes detected. Commit them, stash, or re-run with"
-      yellow "    SIREN_AUTO_COMMIT=1 bash scripts/redeploy.sh"
+      yellow "⚠  Uncommitted changes detected. Choose one:"
+      yellow "    • SIREN_AUTO_COMMIT=1 bash scripts/redeploy.sh   (commit + push + rsync)"
+      yellow "    • SIREN_DIRTY=1       bash scripts/redeploy.sh   (rsync only, skip push)"
+      yellow "    • SIREN_SKIP_PUSH=1   bash scripts/redeploy.sh   (rsync only, skip push)"
       git status --short
       exit 1
     fi
   fi
-  bold "→ Pushing $BRANCH to origin"
-  git push origin "$BRANCH"
-  green "✓ Pushed"
+  if [ "$SIREN_SKIP_PUSH" != "1" ]; then
+    bold "→ Pushing $BRANCH to origin (backup)"
+    git push origin "$BRANCH" || yellow "⚠  push failed — continuing with rsync"
+    green "✓ Pushed"
+  fi
 else
-  yellow "⚠  SIREN_SKIP_PUSH=1 — skipping git push"
+  yellow "⚠  SIREN_SKIP_PUSH=1 — skipping git push (rsync still runs)"
 fi
 echo
 
-# ── 2. Remote redeploy ──────────────────────────────────────────────────────
-bold "→ Connecting to $SIREN_HOST and redeploying"
-
-# Build the remote script as a single heredoc. `bash -s` reads stdin so we can
-# stream this whole block over the existing SSH session — no temp files on the
-# remote box.
+# ── 2. Stage local tree → remote /tmp/siren-stage ───────────────────────────
+bold "→ Staging local tree → $SIREN_SSH_USER@$SIREN_HOST:/tmp/siren-stage"
 ssh -o StrictHostKeyChecking=accept-new \
     -i "$SIREN_SSH_KEY" \
     "$SIREN_SSH_USER@$SIREN_HOST" \
-    "BRANCH='$BRANCH' APP_DIR='$SIREN_APP_DIR' APP_USER='$SIREN_APP_USER' PM2_NAME='$SIREN_PM2_NAME' bash -s" <<'REMOTE'
+    'rm -rf /tmp/siren-stage && mkdir -p /tmp/siren-stage'
+
+# Excludes mirror what's in .gitignore + a few hot caches that we never want
+# to push. We DO ship package-lock.json, server.js, public/, app/, lib/.
+rsync -az --delete \
+  --exclude='node_modules' \
+  --exclude='.next' \
+  --exclude='.git' \
+  --exclude='.cache' \
+  --exclude='.cursor' \
+  --exclude='*.pem' \
+  --exclude='.env' \
+  --exclude='.env.local' \
+  --exclude='public/twilio-audio' \
+  --exclude='tsconfig.tsbuildinfo' \
+  -e "ssh -i '$SIREN_SSH_KEY' -o StrictHostKeyChecking=accept-new" \
+  "$ROOT/" "$SIREN_SSH_USER@$SIREN_HOST:/tmp/siren-stage/"
+green "✓ Staged"
+echo
+
+# ── 3. Remote install / build / restart ─────────────────────────────────────
+bold "→ Connecting to $SIREN_HOST and redeploying"
+
+ssh -o StrictHostKeyChecking=accept-new \
+    -i "$SIREN_SSH_KEY" \
+    "$SIREN_SSH_USER@$SIREN_HOST" \
+    "APP_DIR='$SIREN_APP_DIR' APP_USER='$SIREN_APP_USER' PM2_NAME='$SIREN_PM2_NAME' bash -s" <<'REMOTE'
 set -euo pipefail
 
 bold()   { printf "\033[1m%s\033[0m\n" "$*"; }
@@ -99,20 +136,47 @@ green()  { printf "\033[32m%s\033[0m\n" "$*"; }
 yellow() { printf "\033[33m%s\033[0m\n" "$*"; }
 red()    { printf "\033[31m%s\033[0m\n" "$*"; }
 
-# 2a. Pull latest code
-bold "  ▸ git fetch + reset to origin/$BRANCH"
-sudo -u "$APP_USER" -H git -C "$APP_DIR" fetch origin "$BRANCH"
-sudo -u "$APP_USER" -H git -C "$APP_DIR" reset --hard "origin/$BRANCH"
+# 3a. Sync staged code into /opt/siren/app, preserving the .env symlink
+#     (which points to /etc/siren/siren.env — the source of truth for secrets).
+bold "  ▸ rsync /tmp/siren-stage → $APP_DIR (preserving .env symlink)"
+sudo rsync -a --delete \
+  --exclude='.env' \
+  --exclude='.env.local' \
+  --exclude='node_modules' \
+  --exclude='.next' \
+  --exclude='public/twilio-audio' \
+  /tmp/siren-stage/ "$APP_DIR/"
+sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
-# 2b. Install deps (production-ready; honors lockfile)
+# Sanity-check the env symlink is still intact (must use sudo because
+# /opt/siren is mode 750 and unreadable by the ubuntu SSH user).
+if ! sudo test -L "$APP_DIR/.env"; then
+  red "  ✗ $APP_DIR/.env is missing or not a symlink — refusing to continue."
+  red "    Restore with: sudo -u $APP_USER ln -s /etc/siren/siren.env $APP_DIR/.env"
+  exit 1
+fi
+ENV_TARGET="$(sudo readlink -f "$APP_DIR/.env")"
+if ! sudo test -r "$ENV_TARGET"; then
+  red "  ✗ $APP_DIR/.env points at $ENV_TARGET which is missing/unreadable — refusing to continue."
+  exit 1
+fi
+green "  ✓ .env symlink intact: $ENV_TARGET"
+
+# 3b. Install deps (production-ready; honors lockfile). Note: full install
+#     including devDeps because @tailwindcss/postcss is a devDep needed at
+#     build time. Build output is the only thing PM2 actually serves.
 bold "  ▸ npm ci"
 sudo -u "$APP_USER" -H bash -lc "cd '$APP_DIR' && npm ci --no-audit --no-fund"
 
-# 2c. Build
-bold "  ▸ npm run build"
-sudo -u "$APP_USER" -H bash -lc "cd '$APP_DIR' && NODE_ENV=production npm run build"
+# 3c. Build (always rm -rf .next first — rsync may have brought stale chunks)
+bold "  ▸ rm -rf .next && npm run build"
+sudo -u "$APP_USER" -H bash -lc "cd '$APP_DIR' && rm -rf .next && NODE_ENV=production npm run build"
 
-# 2d. Single-instance guarantee — kill EVERY node process on the box,
+# 3c.1. Drop a marker so we can always answer "what's deployed?".
+DEPLOY_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+sudo -u "$APP_USER" -H bash -lc "printf 'deployed_at=%s\nbuild_id=%s\n' '$DEPLOY_TS' \"\$(cat $APP_DIR/.next/BUILD_ID)\" > $APP_DIR/.deployed-at"
+
+# 3d. Single-instance guarantee — kill EVERY node process on the box,
 # then start exactly one PM2 process named "$PM2_NAME".
 bold "  ▸ Stopping all PM2 + node processes (single-instance guarantee)"
 
@@ -143,20 +207,21 @@ if [ -n "$ORPHANS" ]; then
   sleep 1
 fi
 
-# 2e. Start exactly one PM2 process. Uses server.js because that's the
+# 3e. Start exactly one PM2 process. Uses server.js because that's the
 # project's custom entry (Next 16 + ws-aria WebSocket). Falls back to
 # `npm start` if server.js is missing.
 bold "  ▸ Starting PM2 process: $PM2_NAME"
-if [ -f "$APP_DIR/server.js" ]; then
+# `sudo test -f` because $APP_DIR is mode 750 (siren:siren only).
+if sudo test -f "$APP_DIR/server.js"; then
   sudo -u "$APP_USER" -H bash -lc "cd '$APP_DIR' && pm2 start server.js --name '$PM2_NAME' --time --update-env"
 else
   sudo -u "$APP_USER" -H bash -lc "cd '$APP_DIR' && pm2 start npm --name '$PM2_NAME' --time --update-env -- start"
 fi
 
-# 2f. Save the process list so `pm2 resurrect` works after reboot.
+# 3f. Save the process list so `pm2 resurrect` works after reboot.
 sudo -u "$APP_USER" -H pm2 save --force >/dev/null
 
-# 2g. Sanity-check: there should be EXACTLY one process now.
+# 3g. Sanity-check: there should be EXACTLY one process now.
 COUNT="$(sudo -u "$APP_USER" -H pm2 jlist | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))')"
 if [ "$COUNT" != "1" ]; then
   red "  ✗ Expected exactly 1 PM2 process, found $COUNT"
@@ -166,6 +231,11 @@ fi
 
 green "  ✓ Single PM2 instance running:"
 sudo -u "$APP_USER" -H pm2 list
+
+# 3h. Clean up the staging tree so /tmp doesn't accumulate.
+bold "  ▸ Cleaning up /tmp/siren-stage"
+rm -rf /tmp/siren-stage
+green "  ✓ Cleaned"
 REMOTE
 
 echo
