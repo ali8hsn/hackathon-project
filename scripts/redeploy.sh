@@ -125,10 +125,12 @@ echo
 # ── 3. Remote install / build / restart ─────────────────────────────────────
 bold "→ Connecting to $SIREN_HOST and redeploying"
 
+LOCAL_SHA="$(git rev-parse HEAD 2>/dev/null || echo 'unknown')"
+
 ssh -o StrictHostKeyChecking=accept-new \
     -i "$SIREN_SSH_KEY" \
     "$SIREN_SSH_USER@$SIREN_HOST" \
-    "APP_DIR='$SIREN_APP_DIR' APP_USER='$SIREN_APP_USER' PM2_NAME='$SIREN_PM2_NAME' bash -s" <<'REMOTE'
+    "APP_DIR='$SIREN_APP_DIR' APP_USER='$SIREN_APP_USER' PM2_NAME='$SIREN_PM2_NAME' LOCAL_SHA='$LOCAL_SHA' bash -s" <<'REMOTE'
 set -euo pipefail
 
 bold()   { printf "\033[1m%s\033[0m\n" "$*"; }
@@ -174,7 +176,9 @@ sudo -u "$APP_USER" -H bash -lc "cd '$APP_DIR' && rm -rf .next && NODE_ENV=produ
 
 # 3c.1. Drop a marker so we can always answer "what's deployed?".
 DEPLOY_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-sudo -u "$APP_USER" -H bash -lc "printf 'deployed_at=%s\nbuild_id=%s\n' '$DEPLOY_TS' \"\$(cat $APP_DIR/.next/BUILD_ID)\" > $APP_DIR/.deployed-at"
+sudo -u "$APP_USER" -H bash -lc "printf 'deployed_at=%s\nbuild_id=%s\nsha=%s\n' '$DEPLOY_TS' \"\$(cat $APP_DIR/.next/BUILD_ID)\" '$LOCAL_SHA' > $APP_DIR/.deployed-at"
+# Standalone .git-sha so external tools (curl /api/version) can read it cheaply.
+sudo -u "$APP_USER" -H bash -lc "echo '$LOCAL_SHA' > $APP_DIR/.git-sha"
 
 # 3d. Single-instance guarantee — kill EVERY node process on the box,
 # then start exactly one PM2 process named "$PM2_NAME".
@@ -232,7 +236,27 @@ fi
 green "  ✓ Single PM2 instance running:"
 sudo -u "$APP_USER" -H pm2 list
 
-# 3h. Clean up the staging tree so /tmp doesn't accumulate.
+# 3h. Drift detection — fail loudly if the box has files that aren't in
+# our local tree. The rsync --delete should already prevent this, but a
+# fresh `find` on the box is cheap insurance and gives us a paper trail.
+bold "  ▸ Verifying box parity (no files newer than $APP_DIR/.deployed-at)"
+DRIFT="$(sudo find "$APP_DIR" -type f \
+  -newer "$APP_DIR/.deployed-at" \
+  -not -path "$APP_DIR/node_modules/*" \
+  -not -path "$APP_DIR/.next/*" \
+  -not -path "$APP_DIR/.cache/*" \
+  -not -name '.deployed-at' \
+  -not -name '.git-sha' \
+  2>/dev/null || true)"
+if [ -n "$DRIFT" ]; then
+  red "  ✗ DRIFT DETECTED — files modified on the box AFTER deploy:"
+  echo "$DRIFT" | sed 's/^/      /'
+  red "    These files are unmanaged. Investigate before trusting this deploy."
+else
+  green "  ✓ No drift — every file on the box came from this rsync"
+fi
+
+# 3i. Clean up the staging tree so /tmp doesn't accumulate.
 bold "  ▸ Cleaning up /tmp/siren-stage"
 rm -rf /tmp/siren-stage
 green "  ✓ Cleaned"

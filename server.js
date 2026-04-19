@@ -4,6 +4,32 @@
  * Prod:  npm run build && npm start
  */
 require('dotenv').config();
+
+// ─── Boot-time configuration audit ──────────────────────────────────────────
+// We log a single line at boot so PM2 surfaces it right at the top of the log
+// and any operator can answer "are all the keys baked in?" with one glance.
+// Anthropic is hard-required (Claude is the brain). The others are degraded-mode
+// optional, but still worth advertising.
+(() => {
+  const has = (v) => !!String(v || '').trim();
+  const status = {
+    Anthropic: has(process.env.ANTHROPIC_API_KEY),
+    Gemini: has(process.env.GEMINI_API_KEY),
+    Eleven: has(process.env.ELEVENLABS_API_KEY),
+    Twilio: has(process.env.TWILIO_ACCOUNT_SID) && has(process.env.TWILIO_AUTH_TOKEN),
+    Mongo: has(process.env.MONGODB_URI),
+  };
+  const line = Object.entries(status)
+    .map(([k, v]) => `${k}=${v ? 'on' : 'off'}`)
+    .join(' ');
+  console.log(`[CONFIG] ${line}`);
+  if (!status.Anthropic) {
+    console.error('[CONFIG] FATAL: ANTHROPIC_API_KEY missing — refusing to boot.');
+    console.error('[CONFIG]        Set it in /etc/siren/siren.env (or .env locally) and restart PM2.');
+    process.exit(78); // 78 = config error (sysexits.h EX_CONFIG)
+  }
+})();
+
 const path = require('path');
 const fs = require('fs');
 const http = require('http');

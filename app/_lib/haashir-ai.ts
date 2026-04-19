@@ -404,9 +404,23 @@ Write the report using EXACTLY this markdown format:
 
 ${conflicts.length > 0 ? "## CONFLICTING REPORTS\n- <discrepancies between callers>\n\n" : ""}\
 ## DISPATCH RECOMMENDATION
-<single clear paragraph with tactical recommendation — units needed, priority actions, hazards to note>
+PRIORITY: <P1 | P2 | P3 | P4>
+ADDRESS: <single line — full street address or best-known location>
 
-Rules: Use only the section headers above. No speculation. Facts only. Keep each section brief and actionable.`;
+### IMMEDIATE DISPATCH
+- <verb-led action: max 12 words, e.g. "Dispatch 2 engines + 1 ladder to 412 Oak St">
+- <verb-led action>
+- <verb-led action>
+
+### BYSTANDER INSTRUCTIONS
+- <verb-led caller guidance: max 12 words, e.g. "Tell caller to evacuate east side, stay on line">
+- <verb-led caller guidance>
+
+### RESPONDER PREPARATION
+- <verb-led prep note: max 12 words, e.g. "Stage EMS one block south, brief on hazmat exposure">
+- <verb-led prep note>
+
+Rules: Use only the section headers above. PRIORITY and ADDRESS lines are required. Each section needs 2-4 bullets that start with a verb (Dispatch, Stage, Notify, Instruct, Establish, Confirm, Brief). Max 12 words per bullet. No prose paragraphs anywhere in DISPATCH RECOMMENDATION. No speculation. Facts only.`;
 
   const text = await claudeText(
     "You are an emergency dispatch AI assistant. Write clear, factual, actionable reports. No speculation. Use markdown formatting with ** for bold headers.",
