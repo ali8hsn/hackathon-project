@@ -179,22 +179,6 @@ export default function Sidebar() {
         </p>
       </div>
 
-      {/* Bottom */}
-      <div
-        className="mt-auto px-4 pb-5 pt-4 border-t"
-        style={{ borderColor: "rgba(255,255,255,0.06)" }}
-      >
-        <a
-          href="#"
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-[11px] font-semibold transition-colors hover:bg-white/5"
-          style={{ color: "rgba(255,255,255,0.45)" }}
-        >
-          <span className="material-symbols-outlined text-[16px]">
-            settings
-          </span>
-          <span>Settings</span>
-        </a>
-      </div>
     </aside>
   );
 }

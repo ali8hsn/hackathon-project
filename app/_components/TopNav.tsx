@@ -230,29 +230,6 @@ export default function TopNav() {
           </span>
         </button>
 
-        <div
-          className="h-6 w-px"
-          style={{
-            background: onCream
-              ? "rgba(10,10,15,0.12)"
-              : "rgba(255,255,255,0.12)",
-          }}
-        />
-
-        <div
-          className="w-8 h-8 rounded-full border flex items-center justify-center"
-          style={{
-            background: onCream
-              ? "rgba(10, 10, 15, 0.04)"
-              : "rgba(255, 255, 255, 0.04)",
-            borderColor: onCream
-              ? "rgba(10, 10, 15, 0.1)"
-              : "rgba(255, 255, 255, 0.1)",
-            color: onCream ? "rgba(10,10,15,0.5)" : "rgba(255,255,255,0.5)",
-          }}
-        >
-          <span className="material-symbols-outlined text-[16px]">person</span>
-        </div>
       </div>
 
       {settingsOpen && (
