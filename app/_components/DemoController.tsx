@@ -101,10 +101,10 @@ export const DEMO_STEPS: {
   },
   {
     atSec: 35,
-    title: "Dispatcher view — beyond the call",
-    body: "Live dispatch view shows every active incident on the map with severity-sorted units in motion.",
+    title: "Phone monitor — Twilio plumbing live",
+    body: "The dedicated Phone Calls monitor shows the last webhook hit, every active call, and a streaming event feed for Twilio.",
     spotlight: "report",
-    route: "/dispatch-live",
+    route: "/phone-calls",
   },
   {
     atSec: 42,
@@ -240,7 +240,7 @@ export default function DemoController({
     lastRouteRef.current = null;
     onClose();
     // Bring the dispatcher back home so the demo always finishes on the
-    // hero rather than orphaned on /intake or /dispatch-live.
+    // hero rather than orphaned on /intake or /phone-calls.
     router.push("/");
   }, [onClose, router]);
 

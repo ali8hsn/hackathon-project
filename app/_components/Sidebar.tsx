@@ -10,6 +10,7 @@ const primaryNav = [
 
 const secondaryNav = [
   { href: "/intake", label: "Voice Intake", icon: "call" },
+  { href: "/phone-calls", label: "Phone Calls", icon: "phone_in_talk" },
   { href: "/haashir-assist", label: "AI Assist", icon: "smart_toy" },
   { href: "/trend-detection", label: "Trends", icon: "query_stats" },
 ];

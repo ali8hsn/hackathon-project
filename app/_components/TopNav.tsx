@@ -9,6 +9,7 @@ const pageLabels: Record<string, { eyebrow: string; title: string }> = {
   "/": { eyebrow: "Overview", title: "Siren AI" },
   "/reports": { eyebrow: "Archive", title: "Call reports" },
   "/intake": { eyebrow: "Voice", title: "Intake console" },
+  "/phone-calls": { eyebrow: "Twilio", title: "Phone calls" },
   "/haashir-assist": { eyebrow: "Agent", title: "AI assist" },
   "/trend-detection": { eyebrow: "Analytics", title: "Trend detection" },
 };

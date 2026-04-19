@@ -77,6 +77,14 @@ let anthropic = new Anthropic({ apiKey: anthropicKey });
 // show greyed-out chips.
 let aiActive = true;
 
+// Tracks the timestamp (ms epoch) of the most recent Twilio webhook (voice,
+// gather, or call-status). The /phone-calls monitor surfaces this so an
+// operator can immediately tell whether Twilio is actually reaching the box.
+let lastTwilioWebhookAt = null;
+function bumpTwilioWebhook() {
+  lastTwilioWebhookAt = Date.now();
+}
+
 const sessions = {};
 /** Twilio CallSid → ARIA sessionId (multiple concurrent calls supported). */
 const twilioCallSidToSessionId = Object.create(null);
@@ -269,7 +277,8 @@ ariaApp.get('/status', (req, res) => {
     whisper: whisperInstalled,
     anthropic: hasKey,
     aiActive,
-    activeSessions: Object.keys(sessions).filter(k => sessions[k].callActive).length
+    activeSessions: Object.keys(sessions).filter(k => sessions[k].callActive).length,
+    lastTwilioWebhookAt
   });
 });
 
@@ -964,6 +973,7 @@ ariaApp.get('/twilio/ping', (req, res) => {
 });
 
 ariaApp.post('/twilio/voice', async (req, res) => {
+  bumpTwilioWebhook();
   if (!twilioSignatureOk(req)) return res.status(403).send('Forbidden');
   const callSid = req.body.CallSid;
   const from = req.body.From || '';
@@ -1022,6 +1032,7 @@ ariaApp.post('/twilio/voice', async (req, res) => {
 });
 
 ariaApp.post('/twilio/gather', async (req, res) => {
+  bumpTwilioWebhook();
   if (!twilioSignatureOk(req)) return res.status(403).send('Forbidden');
   const callSid = req.body.CallSid;
   const speech = (req.body.SpeechResult || '').trim();
@@ -1081,6 +1092,7 @@ ariaApp.get('/twilio/audio/:file', (req, res) => {
 
 /** Optional: set Twilio number "Status callback" to this URL so sessions end when the call completes. */
 ariaApp.post('/twilio/call-status', (req, res) => {
+  bumpTwilioWebhook();
   if (!twilioSignatureOk(req)) return res.status(403).send('Forbidden');
   const callSid = req.body.CallSid;
   const status = req.body.CallStatus || '';

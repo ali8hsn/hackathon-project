@@ -443,6 +443,25 @@ export default function HomePage() {
                   />
                 </div>
               )}
+              <div className="flex items-center justify-between mb-3">
+                <span
+                  className="text-[10px] font-bold uppercase tracking-[0.22em]"
+                  style={{ color: "rgba(255,255,255,0.45)" }}
+                >
+                  Twilio
+                  {liveCallers.length > 0 ? ` · ${liveCallers.length} live` : ""}
+                </span>
+                <Link
+                  href="/phone-calls"
+                  className="group inline-flex items-center gap-1.5 text-[11px] font-semibold transition-colors"
+                  style={{ color: "rgba(167,139,250,0.85)" }}
+                >
+                  View live phone monitor
+                  <span className="material-symbols-outlined text-[14px] group-hover:translate-x-0.5 transition-transform">
+                    arrow_forward
+                  </span>
+                </Link>
+              </div>
               {liveCallers.length > 0 && (
                 <div className="mb-6">
                   <LiveCallerQueue
