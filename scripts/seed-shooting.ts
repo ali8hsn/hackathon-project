@@ -1,7 +1,7 @@
 /**
- * Seed: Active Shooter — Sentinel Assist Mode
+ * Seed: Active Shooter — Haashir Assist Mode
  *
- * Sends a life-threatening call with sentinel_assist_enabled=true.
+ * Sends a life-threatening call with haashir_assist_enabled=true.
  * This should trigger auto-flagging (HIGH priority, bypasses triage).
  *
  * Usage: bun run scripts/seed-shooting.ts
@@ -15,7 +15,7 @@ const transcripts = [
       "There are shots fired at the Riverside Shopping Center on Congress Avenue. People are running and screaming. I'm hiding behind a car in the parking lot. I heard at least 5 or 6 shots. I can see a man with a gun near the entrance of the Target store. Please send help immediately, there are people on the ground.",
     caller_id: "CALLER-1 (Bystander)",
     coordinates: { lat: 30.2490, lng: -97.7480 },
-    sentinel_assist: true,
+    haashir_assist: true,
     delay: 0,
   },
   {
@@ -23,7 +23,7 @@ const transcripts = [
       "I'm an employee at the Target on Congress. A man came in and started shooting. We've locked ourselves in the back stockroom. I can hear more shots. There are about 15 of us in here. I think at least two customers were hit near the front registers.",
     caller_id: "CALLER-2 (Employee)",
     coordinates: { lat: 30.2492, lng: -97.7478 },
-    sentinel_assist: true,
+    haashir_assist: true,
     delay: 2000,
   },
 ];
@@ -39,7 +39,7 @@ async function ingestTranscript(entry: (typeof transcripts)[number]) {
       transcript: entry.transcript,
       caller_id: entry.caller_id,
       coordinates: entry.coordinates,
-      sentinel_assist_enabled: entry.sentinel_assist,
+      haashir_assist_enabled: entry.haashir_assist,
     }),
   });
 
@@ -60,7 +60,7 @@ function sleep(ms: number) {
 
 async function main() {
   console.log("═".repeat(60));
-  console.log("🔫 SEED: Active Shooter (Sentinel Assist ON)");
+  console.log("🔫 SEED: Active Shooter (Haashir Assist ON)");
   console.log("═".repeat(60));
 
   for (const entry of transcripts) {
@@ -69,7 +69,7 @@ async function main() {
   }
 
   console.log("\n✅ Done — check:");
-  console.log("  → Sentinel Assist: http://localhost:3000/sentinel-assist");
+  console.log("  → Haashir Assist: http://localhost:3000/haashir-assist");
   console.log("  → Monitor: http://localhost:3000/");
 }
 
