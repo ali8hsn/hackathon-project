@@ -634,6 +634,13 @@ function connectWS() {
 }
 
 function handleMsg(msg) {
+  /** Only this browser session — ignore parallel Twilio phone sessions on the same WS. */
+  if (sessionId != null && msg.sessionId != null && msg.sessionId !== sessionId) {
+    return;
+  }
+  if (sessionId == null && msg.channel === 'phone') {
+    return;
+  }
   switch(msg.type) {
     case 'transcription':
       g('processingBadge').classList.add('show');

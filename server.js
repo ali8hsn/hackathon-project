@@ -24,6 +24,9 @@ const nextApp = next({ dev, dir: __dirname });
 const handle = nextApp.getRequestHandler();
 
 const ariaApp = express();
+/** Behind AWS ALB / nginx / CloudFront — correct Host, X-Forwarded-Proto, signatures. */
+ariaApp.set('trust proxy', 1);
+
 /** Allow split-deploy frontends to call /api/aria and use /ws-aria from another origin. */
 ariaApp.use((req, res, next) => {
   const allow = (process.env.ARIA_CORS_ORIGIN || '*').trim();
@@ -67,8 +70,11 @@ function checkWhisper() {
 function getPublicBaseUrl(req) {
   const env = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
   if (env) return env;
-  const host = req.get('host') || req.headers.host || `localhost:${process.env.PORT || 3000}`;
-  const proto = req.get('x-forwarded-proto') || (String(host).includes('localhost') ? 'http' : 'https');
+  const host =
+    req.get('x-forwarded-host') || req.get('host') || req.headers.host || `localhost:${process.env.PORT || 3000}`;
+  let proto = req.get('x-forwarded-proto');
+  if (!proto && req.secure) proto = 'https';
+  if (!proto) proto = String(host).includes('localhost') ? 'http' : 'https';
   return `${proto}://${host}`;
 }
 
@@ -284,6 +290,7 @@ async function ingestCallerText(sessionId, text) {
     text: trimmed,
     translatedText,
     isNonEnglish,
+    ticket: sessions[sessionId].ticket,
     timestamp: entry.timestamp
   });
 
@@ -440,6 +447,30 @@ function scheduleClaudeProcessing(sessionId, englishText) {
   session._claudeIdleTimer = setTimeout(() => flushClaudeBatch(sessionId), 150);
 }
 
+function buildPhoneSystemPrompt(session, transcriptHistory) {
+  return `You are Siren, 911 intake AI. Phone call — respond FAST. JSON only, no markdown.
+
+Caller is already on the emergency line — NEVER say hang up, dial 911, or call 911.
+
+Ticket:
+${JSON.stringify(session.ticket)}
+
+Recent:
+${transcriptHistory}
+
+RESPOND WITH VALID JSON ONLY:
+{
+  "ariaResponse": "Max 2 short sentences for voice",
+  "ticketUpdates": { "type": null, "priority": "CRITICAL|HIGH|MEDIUM|LOW|null", "location": null, "victims": null, "injuries": null, "hazards": null, "callerName": null, "medicalHistory": null, "dispatchStatus": null },
+  "severityScores": { "lifeThreat": 0, "urgency": 0, "locationConfidence": 0, "infoCompleteness": 0 },
+  "timelineStep": 0,
+  "dispatchRecommendation": null,
+  "keyFlags": [],
+  "shouldDispatch": false
+}
+Scores 0-100. timelineStep 0-4.`;
+}
+
 async function processWithClaude(sessionId, rawText, englishText) {
   const session = sessions[sessionId];
   if (!session) return null;
@@ -449,7 +480,11 @@ async function processWithClaude(sessionId, rawText, englishText) {
     .map(t => `[${t.role.toUpperCase()}]: ${t.translatedText || t.text}`)
     .join('\n');
 
-  const systemPrompt = `You are Siren, an AI emergency intake assistant for 911-style emergency dispatch (United States and callers who reach this line from anywhere). You have two jobs:
+  const isPhone = session.channel === 'phone';
+
+  const systemPrompt = isPhone
+    ? buildPhoneSystemPrompt(session, transcriptHistory)
+    : `You are Siren, an AI emergency intake assistant for 911-style emergency dispatch (United States and callers who reach this line from anywhere). You have two jobs:
 1. Extract structured incident data from what the caller is saying — including full location anywhere in the world when they give it; never assume a single city or region.
 2. Provide a calm, clear, helpful spoken response to guide the caller
 
@@ -495,7 +530,7 @@ All scores are 0-100. timelineStep is 0-4 (0=call received, 1=location found, 2=
   try {
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 512,
+      max_tokens: isPhone ? 384 : 512,
       system: systemPrompt,
       messages: [{ role: 'user', content: `New caller statement: "${englishText}"` }]
     });
@@ -565,12 +600,11 @@ async function ingestPhoneTurn(sessionId, text) {
     return "I'm listening. What is your emergency?";
   }
 
-  const { translatedText, isNonEnglish } = await translateCallerIfNeeded(sessionId, trimmed);
-
+  /** No separate translation API — faster; Claude handles language in one call. */
   const entry = {
     role: 'caller',
     text: trimmed,
-    translatedText,
+    translatedText: null,
     timestamp: new Date().toISOString()
   };
   sessions[sessionId].transcript.push(entry);
@@ -583,12 +617,13 @@ async function ingestPhoneTurn(sessionId, text) {
     twilioCallSid: sessions[sessionId].twilioCallSid,
     from: sessions[sessionId].from,
     text: trimmed,
-    translatedText,
-    isNonEnglish,
+    translatedText: null,
+    isNonEnglish: false,
+    ticket: sessions[sessionId].ticket,
     timestamp: entry.timestamp
   });
 
-  const parsed = await processWithClaude(sessionId, trimmed, translatedText || trimmed);
+  const parsed = await processWithClaude(sessionId, trimmed, trimmed);
   const reply =
     parsed?.ariaResponse ||
     "Stay on the line — I'm updating dispatch with what you've told me.";
@@ -684,6 +719,10 @@ ariaApp.post('/session/end', (req, res) => {
 });
 
 // ─── Twilio voice ↔ Siren (Gather + speech recognition; ElevenLabs or Polly TTS) ─
+/** Twilio `<Gather>` attrs: phone_call model + enhanced ASR for simultaneous calls (stateless per request). */
+const TWILIO_GATHER_ATTRS =
+  'input="speech" method="POST" speechTimeout="auto" language="en-US" speechModel="phone_call" enhanced="true" timeout="8"';
+
 /** GET — paste this URL in a browser to verify routing + see exact webhook URLs (no Twilio call needed). */
 ariaApp.get('/twilio/ping', (req, res) => {
   const base = getPublicBaseUrl(req);
@@ -751,7 +790,7 @@ ariaApp.post('/twilio/voice', async (req, res) => {
   const gatherUrl = `${base}/api/aria/twilio/gather`;
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech" action="${escapeXml(gatherUrl)}" method="POST" speechTimeout="auto" language="en-US">
+  <Gather ${TWILIO_GATHER_ATTRS} action="${escapeXml(gatherUrl)}">
     <Say voice="Polly.Matthew">Siren here. What is your emergency?</Say>
   </Gather>
   <Say voice="Polly.Matthew">We did not hear you. Goodbye.</Say>
@@ -785,18 +824,23 @@ ariaApp.post('/twilio/gather', async (req, res) => {
     }
   }
 
-  const playAudioUrl = await buildTwilioTtsPlayUrl(spoken, base);
   let playPart;
-  if (playAudioUrl) {
-    playPart = `<Play>${escapeXml(playAudioUrl)}</Play>`;
-  } else {
+  try {
+    const playAudioUrl = await buildTwilioTtsPlayUrl(spoken, base);
+    if (playAudioUrl) {
+      playPart = `<Play>${escapeXml(playAudioUrl)}</Play>`;
+    } else {
+      playPart = `<Say voice="Polly.Matthew">${escapeXml(spoken.slice(0, 4000))}</Say>`;
+    }
+  } catch (e) {
+    console.error('[TWILIO TTS]', e);
     playPart = `<Say voice="Polly.Matthew">${escapeXml(spoken.slice(0, 4000))}</Say>`;
   }
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   ${playPart}
-  <Gather input="speech" action="${escapeXml(gatherUrl)}" method="POST" speechTimeout="auto" language="en-US"></Gather>
+  <Gather ${TWILIO_GATHER_ATTRS} action="${escapeXml(gatherUrl)}"></Gather>
   <Say voice="Polly.Matthew">Goodbye.</Say>
   <Hangup/>
 </Response>`;
@@ -849,7 +893,12 @@ nextApp.prepare().then(() => {
         return fs.createReadStream(htmlPath).pipe(res);
       }
 
-      if (pathname === '/dispatch-live' || pathname === '/dispatch-live/') {
+      if (
+        pathname === '/dispatch-live' ||
+        pathname === '/dispatch-live/' ||
+        pathname === '/dispatch-live.html' ||
+        pathname === '/dispatch-live.html/'
+      ) {
         const htmlPath = path.join(__dirname, 'public', 'dispatch-live.html');
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return fs.createReadStream(htmlPath).pipe(res);

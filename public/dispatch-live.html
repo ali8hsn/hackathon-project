@@ -23,6 +23,11 @@
     .card.phone { border-left: 3px solid var(--amber); }
     .card.browser { border-left: 3px solid var(--blue); }
     .card.ended { opacity: 0.55; }
+    .card.pulse { animation: cardPulse 1.2s ease; }
+    @keyframes cardPulse {
+      0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.45); }
+      100% { box-shadow: 0 0 0 12px rgba(59, 130, 246, 0); }
+    }
     .card-hdr { padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
     .card-hdr .id { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--muted); }
     .badge { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
@@ -192,6 +197,10 @@
         <div class="ticket-row"><span class="k">Type</span><span>${esc(t.type || '—')}</span></div>`;
       el.querySelector('.pri').textContent = t.priority || '—';
       pinSession(sid, t);
+      el.classList.remove('pulse');
+      void el.offsetWidth;
+      el.classList.add('pulse');
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     function handleMsg(raw) {
@@ -209,7 +218,7 @@
           upsertCard({
             sessionId: msg.sessionId,
             channel: msg.channel,
-            ticket: sessions.get(msg.sessionId)?.ticket
+            ticket: msg.ticket || sessions.get(msg.sessionId)?.ticket
           });
           const tx = msg.translatedText && msg.translatedText !== msg.text ? msg.translatedText : msg.text;
           appendLog(msg.sessionId, 'Caller: ' + tx);
@@ -234,12 +243,40 @@
     const remote = ariaOriginBase();
     if (remote) {
       const el = document.querySelector('header .sub');
-      if (el) el.textContent = 'WS → ' + remote + ' (NEXT_PUBLIC_ARIA_ORIGIN)';
+      if (el) el.textContent = 'WS → ' + remote + ' — same API host as Twilio webhooks';
     }
-    const ws = new WebSocket(wsUrl());
-    ws.onopen = () => { document.getElementById('wsPill').textContent = 'WS: open'; document.getElementById('wsPill').classList.add('ok'); };
-    ws.onmessage = (e) => { try { handleMsg(e.data); } catch (err) { console.warn(err); } };
-    ws.onclose = () => { document.getElementById('wsPill').textContent = 'WS: disconnected'; document.getElementById('wsPill').classList.remove('ok'); };
+    let ws = null;
+    let wsReconnectTimer = null;
+    function connectWs() {
+      if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+      }
+      try {
+        ws = new WebSocket(wsUrl());
+      } catch (e) {
+        console.warn('[dispatch-live] WS create failed', e);
+        scheduleWsReconnect();
+        return;
+      }
+      ws.onopen = () => {
+        document.getElementById('wsPill').textContent = 'WS: live';
+        document.getElementById('wsPill').classList.add('ok');
+      };
+      ws.onmessage = (e) => {
+        try { handleMsg(e.data); } catch (err) { console.warn(err); }
+      };
+      ws.onerror = () => console.warn('[dispatch-live] WS error');
+      ws.onclose = (ev) => {
+        document.getElementById('wsPill').textContent = 'WS: reconnecting…';
+        document.getElementById('wsPill').classList.remove('ok');
+        if (ev.code !== 1000 || !ev.wasClean) scheduleWsReconnect();
+      };
+    }
+    function scheduleWsReconnect() {
+      wsReconnectTimer = setTimeout(connectWs, 2000);
+    }
+    connectWs();
 
     if (!document.getElementById('sessions').children.length) {
       document.getElementById('sessions').innerHTML = '<div class="empty">Waiting for sessions… Open <a href="/intake" style="color:#60a5fa">/intake</a> or call your Twilio number. Split deploy: set <code style="color:#93c5fd">NEXT_PUBLIC_ARIA_ORIGIN</code> to your API URL.</div>';
