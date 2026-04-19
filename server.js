@@ -44,6 +44,7 @@ const os = require('os');
 const { exec, execSync } = require('child_process');
 const twilioPkg = require('twilio');
 const awsS3Twilio = require('./lib/aws-s3-twilio');
+const phoneCallsPersist = require('./lib/phone-calls-persist');
 
 const dev = process.env.NODE_ENV !== 'production';
 const nextApp = next({ dev, dir: __dirname });
@@ -156,12 +157,102 @@ function snapshotClusters() {
 }
 
 let lastClusterSnapshotJson = '[]';
+const autoMergedClusterKeys = new Set();
 function recomputeClustersAndBroadcast() {
   const snapshot = snapshotClusters();
   const json = JSON.stringify(snapshot);
-  if (json === lastClusterSnapshotJson) return;
-  lastClusterSnapshotJson = json;
-  broadcast({ type: 'cluster_update', clusters: snapshot });
+  if (json !== lastClusterSnapshotJson) {
+    lastClusterSnapshotJson = json;
+    broadcast({ type: 'cluster_update', clusters: snapshot });
+  }
+  // Auto-merge: any cluster of >=2 callers about the same incident
+  // becomes ONE incident in Mongo immediately. We do this once per
+  // clusterKey so re-broadcasts don't re-create the same incident.
+  for (const c of snapshot) {
+    if (c.sessionIds.length < MASS_EVENT_THRESHOLD) continue;
+    if (autoMergedClusterKeys.has(c.key)) continue;
+    autoMergedClusterKeys.add(c.key);
+    // Mark each member so `maybePromoteSessionToIncident` knows to act.
+    for (const sid of c.sessionIds) {
+      if (sessions[sid]) sessions[sid]._inCluster = true;
+    }
+    autoMergeCluster(c).catch((e) =>
+      console.warn('[auto-merge cluster]', e?.message || e)
+    );
+  }
+}
+
+/**
+ * Build a synthesized "joined transcript" across every member of `cluster`
+ * and POST it to /api/incidents so a single incident is materialised in
+ * Mongo. Sets each member's `mergedInto` so they drop from later cluster
+ * snapshots and the live-caller pane shows them as merged.
+ */
+async function autoMergeCluster(cluster) {
+  const members = cluster.sessionIds
+    .map((sid) => sessions[sid])
+    .filter(Boolean);
+  if (members.length < MASS_EVENT_THRESHOLD) return;
+
+  const sample = members[0];
+  const locationHint = sample.ticket?.location || undefined;
+  const transcriptText = members
+    .map((s, i) => {
+      const lines = (s.transcript || [])
+        .map((t) => `[${t.role || 'caller'}] ${t.translatedText || t.text || ''}`)
+        .join('\n');
+      return `--- Caller ${i + 1} (${s.ticket?.callerName || 'unknown'}) ---\n${lines}`;
+    })
+    .join('\n\n');
+  if (!transcriptText.trim()) return;
+
+  try {
+    const port = process.env.PORT || 3000;
+    const ingestRes = await fetch(`http://127.0.0.1:${port}/api/incidents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transcript: transcriptText,
+        caller_id: `cluster-${cluster.key}`,
+        location_hint: locationHint,
+      }),
+    });
+    if (!ingestRes.ok) {
+      const txt = await ingestRes.text();
+      console.warn('[auto-merge ingest]', ingestRes.status, txt.slice(0, 200));
+      // Don't lock — let a later trigger retry.
+      autoMergedClusterKeys.delete(cluster.key);
+      return;
+    }
+    const ingest = await ingestRes.json();
+    const newIncidentId = ingest?.incident?.id || ingest?.id || null;
+    if (!newIncidentId) return;
+    for (const sid of cluster.sessionIds) {
+      const s = sessions[sid];
+      if (!s) continue;
+      s.mergedInto = newIncidentId;
+      s._promotedIncidentId = newIncidentId;
+      if (s.ticket) s.ticket.incidentId = newIncidentId;
+      phoneCallsPersist.setIncidentId(sid, newIncidentId);
+    }
+    broadcast({
+      type: 'cluster_merged',
+      clusterKey: cluster.key,
+      sessionIds: cluster.sessionIds,
+      newIncidentId,
+      auto: true,
+    });
+    // Refresh snapshot now that members carry mergedInto.
+    const snap = snapshotClusters();
+    lastClusterSnapshotJson = JSON.stringify(snap);
+    broadcast({ type: 'cluster_update', clusters: snap });
+    console.log(
+      `[auto-merge] cluster ${cluster.key} (${members.length} callers) -> incident ${newIncidentId}`
+    );
+  } catch (err) {
+    console.warn('[auto-merge]', err?.message || err);
+    autoMergedClusterKeys.delete(cluster.key);
+  }
 }
 
 function checkWhisper() {
@@ -289,6 +380,29 @@ ariaApp.get('/status', (req, res) => {
  */
 ariaApp.get('/clusters', (_req, res) => {
   res.json({ clusters: snapshotClusters() });
+});
+
+/**
+ * Recent persisted phone calls. Used by /phone-calls and the homepage to
+ * hydrate on reload — in-memory `sessions` doesn't survive a process
+ * restart. Default window is the last hour to match the auto-refresh
+ * cadence on the client.
+ */
+ariaApp.get('/phone-calls', async (req, res) => {
+  try {
+    const sinceParam = Number(req.query.since);
+    const since = Number.isFinite(sinceParam) && sinceParam > 0
+      ? sinceParam
+      : Date.now() - 60 * 60 * 1000;
+    if (!phoneCallsPersist.isConfigured()) {
+      return res.json({ calls: [], since, mongo: false });
+    }
+    const calls = await phoneCallsPersist.listRecent(since);
+    res.json({ calls, since, mongo: true });
+  } catch (err) {
+    console.error('[/phone-calls]', err?.message || err);
+    res.status(500).json({ error: err?.message || String(err) });
+  }
 });
 
 /**
@@ -459,6 +573,7 @@ ariaApp.post('/session/start', (req, res) => {
     channel: 'browser',
     ticket: sessions[sessionId].ticket
   });
+  persistSnapshot(sessionId);
   console.log(`[SESSION] Started: ${sessionId}`);
   res.json({ sessionId, incidentId: sessions[sessionId].ticket.incidentId });
 });
@@ -510,6 +625,7 @@ async function ingestCallerText(sessionId, text) {
     ticket: sessions[sessionId].ticket,
     timestamp: entry.timestamp
   });
+  persistSnapshot(sessionId);
 
   scheduleClaudeProcessing(sessionId, translatedText || trimmed);
 }
@@ -805,6 +921,8 @@ All scores are 0-100. timelineStep is 0-4 (0=call received, 1=location found, 2=
       shouldDispatch: parsed.shouldDispatch,
       timestamp: new Date().toISOString()
     });
+    session.severityScores = parsed.severityScores || session.severityScores;
+    persistSnapshot(sessionId, { severityScores: session.severityScores });
 
     console.log(`[CLAUDE] Type: ${session.ticket.type} | Priority: ${session.ticket.priority}`);
 
@@ -817,6 +935,104 @@ All scores are 0-100. timelineStep is 0-4 (0=call received, 1=location found, 2=
       channel: sessions[sessionId]?.channel || 'browser',
       message: 'AI processing error: ' + err.message
     });
+    return null;
+  }
+}
+
+/**
+ * Snapshot a session for persistence to the `phone_calls` collection.
+ * Called from every WS-broadcast site so a refresh of /phone-calls or the
+ * homepage hydrates the same in-memory state we've been showing live.
+ * Best-effort — never throws into the Twilio/Claude path.
+ */
+function snapshotSessionForPersist(sessionId, extra) {
+  const s = sessions[sessionId];
+  if (!s) return null;
+  const startedAt = s.startTime
+    ? new Date(s.startTime).getTime()
+    : Date.now();
+  return {
+    sessionId,
+    twilioCallSid: s.twilioCallSid || null,
+    from: s.from || null,
+    startedAt,
+    lastSeen: s.lastSeen || Date.now(),
+    ticket: s.ticket || null,
+    transcript: Array.isArray(s.transcript) ? s.transcript.slice(-30) : [],
+    severityScores: (extra && extra.severityScores) || s.severityScores || null,
+    incidentId: s.ticket?.incidentId || null,
+    ...(extra || {}),
+  };
+}
+function persistSnapshot(sessionId, extra) {
+  const snap = snapshotSessionForPersist(sessionId, extra);
+  if (snap) phoneCallsPersist.upsertPhoneCall(snap);
+}
+
+/**
+ * After a call ends (or when a cluster forms), maybe materialise the
+ * session as a real incident in the `incidents` collection so it shows
+ * up in /reports and on the homepage feed. We promote when:
+ *   • severity.lifeThreat >= 7 (HIGH/CRITICAL), OR
+ *   • the session is part of a 2+ caller cluster (joined incident), OR
+ *   • the caller spoke at least 3 turns (enough signal to be useful).
+ * The actual merge logic (UPDATE existing vs CREATE new) lives in the
+ * incident-ingest pipeline — we just hand it a transcript.
+ */
+async function maybePromoteSessionToIncident(sessionId, opts) {
+  const session = sessions[sessionId];
+  if (!session) return null;
+  if (session._promotedIncidentId) return session._promotedIncidentId;
+
+  const force = !!(opts && opts.force);
+  const lifeThreat =
+    (session.severityScores && Number(session.severityScores.lifeThreat)) || 0;
+  const callerTurns = (session.transcript || []).filter(
+    (t) => t.role === 'caller'
+  ).length;
+  const inCluster = !!session._inCluster;
+
+  const shouldPromote = force || lifeThreat >= 7 || inCluster || callerTurns >= 3;
+  if (!shouldPromote) return null;
+
+  const transcriptText = (session.transcript || [])
+    .map((t) => {
+      const role = t.role === 'caller' ? 'CALLER' : 'SIREN AI';
+      const txt = t.translatedText || t.text || '';
+      return `[${role}] ${txt}`;
+    })
+    .join('\n');
+  if (!transcriptText.trim()) return null;
+
+  try {
+    const port = process.env.PORT || 3000;
+    const ingestRes = await fetch(`http://127.0.0.1:${port}/api/incidents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transcript: transcriptText,
+        caller_id: session.from || (session.channel === 'phone' ? 'phone' : 'browser'),
+        location_hint: session.ticket?.location || undefined,
+        haashir_assist_enabled: !!session._escalated,
+      }),
+    });
+    if (!ingestRes.ok) {
+      const txt = await ingestRes.text();
+      console.warn('[promote] ingest non-ok', ingestRes.status, txt.slice(0, 200));
+      return null;
+    }
+    const ingest = await ingestRes.json();
+    const newIncidentId = ingest?.incident?.id || ingest?.id || null;
+    if (newIncidentId) {
+      session._promotedIncidentId = newIncidentId;
+      session.ticket.incidentId = newIncidentId;
+      phoneCallsPersist.setIncidentId(sessionId, newIncidentId);
+      persistSnapshot(sessionId);
+      console.log(`[promote] session ${sessionId.slice(0,8)} -> incident ${newIncidentId}`);
+    }
+    return newIncidentId;
+  } catch (err) {
+    console.warn('[promote]', err?.message || err);
     return null;
   }
 }
@@ -850,6 +1066,7 @@ async function ingestPhoneTurn(sessionId, text) {
     ticket: sessions[sessionId].ticket,
     timestamp: entry.timestamp
   });
+  persistSnapshot(sessionId);
 
   const parsed = await processWithClaude(sessionId, trimmed, trimmed);
   const reply =
@@ -926,6 +1143,74 @@ Be precise and professional. This will be used by dispatchers and first responde
   }
 });
 
+/**
+ * Dispatch Now → mark the session as dispatched (HIGH priority), promote to
+ * an incident immediately so it shows on /reports + the homepage feed, and
+ * broadcast `dispatcher_action` so every connected dashboard flips its
+ * matching button.
+ */
+ariaApp.post('/session/dispatch', async (req, res) => {
+  const { sessionId } = req.body || {};
+  const session = sessions[sessionId];
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+  session._dispatched = true;
+  session.ticket = session.ticket || {};
+  session.ticket.dispatchStatus = 'DISPATCHED';
+  if (!session.ticket.priority) session.ticket.priority = 'HIGH';
+  broadcast({
+    type: 'dispatcher_action',
+    action: 'dispatched',
+    sessionId,
+    ticket: session.ticket,
+  });
+  persistSnapshot(sessionId);
+  let incidentId = null;
+  try {
+    incidentId = await maybePromoteSessionToIncident(sessionId, { force: true });
+  } catch (err) {
+    console.warn('[dispatch promote]', err?.message || err);
+  }
+  res.json({ ok: true, incidentId, sessionId });
+});
+
+/**
+ * Join Call → dispatcher virtually picks up. We broadcast so /phone-calls
+ * and homepage can show an "ON LINE" badge for the call. No transcript
+ * change — this is a UI signal, not a Twilio bridge.
+ */
+ariaApp.post('/session/join', (req, res) => {
+  const { sessionId } = req.body || {};
+  const session = sessions[sessionId];
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+  session._dispatcherJoined = true;
+  broadcast({
+    type: 'dispatcher_action',
+    action: 'joined',
+    sessionId,
+  });
+  persistSnapshot(sessionId);
+  res.json({ ok: true });
+});
+
+/**
+ * Escalate → flips Haashir-Assist on for downstream incident creation and
+ * marks the session escalated so dashboards can highlight it. The escalation
+ * flag is forwarded into ingestTranscript when we promote.
+ */
+ariaApp.post('/session/escalate', (req, res) => {
+  const { sessionId } = req.body || {};
+  const session = sessions[sessionId];
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+  session._escalated = true;
+  broadcast({
+    type: 'dispatcher_action',
+    action: 'escalated',
+    sessionId,
+  });
+  persistSnapshot(sessionId);
+  res.json({ ok: true });
+});
+
 ariaApp.post('/session/end', (req, res) => {
   const { sessionId } = req.body;
   const session = sessions[sessionId];
@@ -943,6 +1228,11 @@ ariaApp.post('/session/end', (req, res) => {
     session.callActive = false;
     broadcast({ type: 'session_end', sessionId });
     recomputeClustersAndBroadcast();
+    persistSnapshot(sessionId, { endedAt: Date.now() });
+    phoneCallsPersist.markEnded(sessionId);
+    maybePromoteSessionToIncident(sessionId).catch((e) =>
+      console.warn('[promote-to-incident]', e?.message || e)
+    );
     console.log(`[SESSION] Ended: ${sessionId}`);
   }
   res.json({ ok: true });
@@ -1014,15 +1304,32 @@ ariaApp.post('/twilio/voice', async (req, res) => {
       from,
       ticket: sessions[sessionId].ticket
     });
+    persistSnapshot(sessionId);
     console.log(`[TWILIO] Incoming call ${callSid} → session ${sessionId.slice(0, 8)}`);
   }
 
   const base = getPublicBaseUrl(req);
   const gatherUrl = `${base}/api/aria/twilio/gather`;
+
+  // Reassurance line — confirm the caller IS in the 911 system before
+  // asking the open-ended question. Try ElevenLabs first (more natural
+  // for a stressed caller); fall back to Polly if ElevenLabs is offline.
+  const reassurance =
+    "You've reached emergency dispatch. Help is being connected to you as quickly as possible. Stay on the line and tell me what's happening.";
+  let reassurancePlay = `<Say voice="Polly.Matthew">${escapeXml(reassurance)}</Say>`;
+  try {
+    const playUrl = await buildTwilioTtsPlayUrl(reassurance, base);
+    if (playUrl) {
+      reassurancePlay = `<Play>${escapeXml(playUrl)}</Play>`;
+    }
+  } catch (e) {
+    console.warn('[TWILIO TTS reassurance]', e?.message || e);
+  }
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather ${TWILIO_GATHER_ATTRS} action="${escapeXml(gatherUrl)}">
-    <Say voice="Polly.Matthew">Siren here. What is your emergency?</Say>
+    ${reassurancePlay}
   </Gather>
   <Say voice="Polly.Matthew">We did not hear you. Goodbye.</Say>
   <Hangup/>
@@ -1107,6 +1414,11 @@ ariaApp.post('/twilio/call-status', (req, res) => {
         twilioCallSid: callSid
       });
       recomputeClustersAndBroadcast();
+      persistSnapshot(sessionId, { endedAt: Date.now() });
+      phoneCallsPersist.markEnded(sessionId);
+      maybePromoteSessionToIncident(sessionId).catch((e) =>
+        console.warn('[promote-to-incident]', e?.message || e)
+      );
       delete twilioCallSidToSessionId[callSid];
       console.log(`[TWILIO] Call ended ${callSid}`);
     }

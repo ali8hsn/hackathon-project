@@ -1,8 +1,9 @@
 /**
- * Seed: Extra Low-Priority Incidents (Austin, TX)
+ * Seed: Extra Low-Priority Incidents (Multi-City)
  *
- * More mundane, observational-only calls. Single callers, no urgency.
- * These should always classify as LOW.
+ * Mundane, observational-only calls — single callers, no urgency. Fresh
+ * mix from cities other than Austin so the table doesn't feel duplicated.
+ * All rows tagged `is_demo:true`.
  *
  * Usage: bun run scripts/seed-low.ts
  */
@@ -10,86 +11,86 @@
 const API_BASE = "http://localhost:3000";
 
 const scenarios = [
-  // ─── 1. Illegal dumping ────────────────────────────────────────────
+  // ─── 1. Mailbox vandalism (Portland) ──────────────────────────────────
   {
     callers: [
       {
         transcript:
-          "Someone dumped a bunch of old furniture and mattresses on the side of the road near the bridge on East Riverside Drive in Austin. It's been there for a few days now and nobody's cleaned it up. It's starting to look really trashy. There are also some bags of garbage.",
-        caller_id: "CALLER (Jogger)",
-        coordinates: { lat: 30.2408, lng: -97.7270 },
-      },
-    ],
-  },
-
-  // ─── 2. Broken traffic signal ─────────────────────────────────────
-  {
-    callers: [
-      {
-        transcript:
-          "The traffic light at the intersection of Manor Road and Airport Boulevard in Austin is stuck on flashing red in all directions. It's been like this for at least two hours. Cars are treating it as a four-way stop but I almost saw a couple of close calls. Can you get someone from the city to look at it?",
-        caller_id: "CALLER (Commuter)",
-        coordinates: { lat: 30.2858, lng: -97.7115 },
-      },
-    ],
-  },
-
-  // ─── 3. Homeless encampment concern ───────────────────────────────
-  {
-    callers: [
-      {
-        transcript:
-          "I want to report a growing homeless encampment under the bridge on North Lamar near 51st Street in Austin. There are about ten tents now and it's blocking part of the sidewalk. I've seen open fires there at night which worries me. I'm not asking for enforcement, just maybe some outreach services or fire safety check.",
-        caller_id: "CALLER (Neighbor)",
-        coordinates: { lat: 30.3100, lng: -97.7440 },
-      },
-    ],
-  },
-
-  // ─── 4. Found property ───────────────────────────────────────────
-  {
-    callers: [
-      {
-        transcript:
-          "I found a wallet in the parking lot of the Whole Foods on North Lamar in Austin. It has a driver's license, credit cards, and about 40 dollars cash in it. The name on the license is James R. Thompson. I tried calling the number on a business card inside but no answer. I have it with me at the store right now.",
-        caller_id: "CALLER (Shopper)",
-        coordinates: { lat: 30.3070, lng: -97.7475 },
-      },
-    ],
-  },
-
-  // ─── 5. Fireworks complaint ────────────────────────────────────────
-  {
-    callers: [
-      {
-        transcript:
-          "People are shooting off fireworks in the park on East Cesar Chavez near the bridge in Austin. It's 11 PM on a weekday and it's been going on for about 45 minutes. My dogs are freaking out. I know the Fourth of July is next week but this is ridiculous. Kids in the neighborhood are trying to sleep.",
+          "Someone smashed our community mailboxes on SE 38th Ave near Hawthorne in Portland overnight. Mail is scattered all over the sidewalk and some envelopes look like they've been opened. The neighbors and I are going to start picking it up but USPS will probably want to know too.",
         caller_id: "CALLER (Resident)",
-        coordinates: { lat: 30.2535, lng: -97.7330 },
+        coordinates: { lat: 45.5128, lng: -122.6235 },
       },
     ],
   },
 
-  // ─── 6. Pothole hazard ────────────────────────────────────────────
+  // ─── 2. Stop sign knocked down (Salt Lake City) ───────────────────────
   {
     callers: [
       {
         transcript:
-          "There's a massive pothole on South Congress Avenue right around the 1100 block in Austin. It's in the right lane and it's deep enough that I saw a car bottom out going through it. Someone's going to blow a tire or damage their car. It needs to be fixed or at least coned off.",
+          "The stop sign at the corner of 700 East and 400 South in Salt Lake City has been completely knocked over. Probably hit by a car. It's lying in the gutter. Drivers are blowing through the intersection because they don't realize it's supposed to be a four-way stop.",
+        caller_id: "CALLER (Pedestrian)",
+        coordinates: { lat: 40.7615, lng: -111.8741 },
+      },
+    ],
+  },
+
+  // ─── 3. Loud generator (New Orleans) ──────────────────────────────────
+  {
+    callers: [
+      {
+        transcript:
+          "There's a construction generator running on Magazine Street near Napoleon in New Orleans. It's been on since 6 AM, it's now after 10 PM. The contractor said they'd shut it down at 7 but they didn't. Half the block can hear it through closed windows.",
+        caller_id: "CALLER (Resident)",
+        coordinates: { lat: 29.9215, lng: -90.0950 },
+      },
+    ],
+  },
+
+  // ─── 4. Lost child reunited (San Diego) ───────────────────────────────
+  {
+    callers: [
+      {
+        transcript:
+          "I'm at Mission Beach in San Diego near the boardwalk. A little girl, maybe 5 or 6, is here without her parents. She's calm but she's been with me for about 15 minutes and we can't find her family. She says her name is Maya and her mom was wearing a yellow sundress.",
+        caller_id: "CALLER (Lifeguard)",
+        coordinates: { lat: 32.7672, lng: -117.2549 },
+      },
+    ],
+  },
+
+  // ─── 5. Overflowing dumpster (Cleveland) ──────────────────────────────
+  {
+    callers: [
+      {
+        transcript:
+          "The commercial dumpster behind the strip mall on Detroit Avenue near W 117th in Cleveland is overflowing. Trash bags piled six feet high, raccoons and rats are getting into it. It hasn't been picked up in over two weeks. The smell is unbearable.",
+        caller_id: "CALLER (Business owner)",
+        coordinates: { lat: 41.4845, lng: -81.7621 },
+      },
+    ],
+  },
+
+  // ─── 6. Abandoned shopping carts in road (Tampa) ──────────────────────
+  {
+    callers: [
+      {
+        transcript:
+          "Someone left about a dozen Publix shopping carts in the middle of Bayshore Boulevard in Tampa, near Bay to Bay. Cars are swerving around them. Nobody is here, looks like they were just dumped. They're going to cause a wreck.",
         caller_id: "CALLER (Driver)",
-        coordinates: { lat: 30.2508, lng: -97.7468 },
+        coordinates: { lat: 27.9159, lng: -82.4905 },
       },
     ],
   },
 
-  // ─── 7. Trespasser in vacant building ─────────────────────────────
+  // ─── 7. Found dog (Kansas City) ───────────────────────────────────────
   {
     callers: [
       {
         transcript:
-          "I manage a commercial property on East 5th Street near I-35 in Austin. Someone has broken into the vacant unit on the ground floor again. I can see a light on inside through the boarded window. This is the third time this month. Nobody should be in there — the building doesn't have power.",
-        caller_id: "CALLER (Property manager)",
-        coordinates: { lat: 30.2640, lng: -97.7350 },
+          "I found a small terrier wandering along Ward Parkway near 55th in Kansas City. He has a collar but no tags. Friendly but really scared. I have him at my house — I can't keep him but I want someone to scan for a chip and reunite him with his owner.",
+        caller_id: "CALLER (Resident)",
+        coordinates: { lat: 39.0246, lng: -94.5950 },
       },
     ],
   },
@@ -107,6 +108,7 @@ async function ingestTranscript(entry: { transcript: string; caller_id: string; 
       caller_id: entry.caller_id,
       coordinates: entry.coordinates,
       haashir_assist_enabled: false,
+      is_demo: true,
     }),
   });
 
@@ -122,7 +124,7 @@ function sleep(ms: number) {
 
 async function main() {
   console.log("═".repeat(60));
-  console.log("📋 SEED: Extra Low-Priority Incidents (Austin)");
+  console.log("📋 SEED: Extra Low-Priority Incidents (Multi-City)");
   console.log("═".repeat(60));
 
   for (let s = 0; s < scenarios.length; s++) {

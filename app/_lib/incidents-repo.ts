@@ -24,6 +24,7 @@ export type IncidentRow = {
   units_assigned?: unknown[];
   casualties?: unknown;
   confidence_levels?: unknown[];
+  is_demo?: boolean;
   created_at: Date;
   updated_at: Date;
 };
@@ -59,6 +60,7 @@ function docToRow(doc: IncidentDoc): IncidentRow {
     units_assigned: doc.units_assigned as unknown[],
     casualties: doc.casualties,
     confidence_levels: doc.confidence_levels as unknown[],
+    is_demo: Boolean(doc.is_demo),
     created_at: doc.created_at instanceof Date ? doc.created_at : new Date(),
     updated_at: doc.updated_at instanceof Date ? doc.updated_at : new Date(),
   };
@@ -90,6 +92,7 @@ export function transformDbToFrontend(row: IncidentRow | Record<string, unknown>
     conflicts: r.conflicts ?? [],
     confidenceLevels: r.confidence_levels ?? [],
     transcript: r.raw_logs ?? [],
+    isDemo: Boolean(r.is_demo),
   };
 }
 
@@ -174,6 +177,7 @@ export async function insertIncident(
     units_assigned: payload.units_assigned,
     casualties: payload.casualties,
     confidence_levels: payload.confidence_levels,
+    is_demo: !!payload.is_demo,
     created_at: now,
     updated_at: now,
   } satisfies IncidentDoc;

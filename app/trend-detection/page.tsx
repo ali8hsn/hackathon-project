@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import MapView, { type MapPin } from "../_components/MapView";
+import ScenarioLab from "../_components/ScenarioLab";
 
 interface BackendIncident {
   id: string;
@@ -217,6 +218,10 @@ export default function TrendDetectionPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <ScenarioLab
+              title="Trend Lab"
+              subtitle="Drop a transcript to see how it routes through pattern analysis. Hold shift on multiple cards to spot clusters quickly."
+            />
             {/* Empty state */}
             {isEmpty && (
               <div className="flex flex-col items-center justify-center py-16 text-center">

@@ -99,9 +99,18 @@ function tickerToCaller(args: {
   status: LiveCaller["status"];
   confidence?: number;
   incidentId?: string;
+  channel?: "phone" | "browser";
 }): LiveCaller {
-  const { sessionId, from, startedAt, ticket, status, confidence, incidentId } =
-    args;
+  const {
+    sessionId,
+    from,
+    startedAt,
+    ticket,
+    status,
+    confidence,
+    incidentId,
+    channel,
+  } = args;
   const hazards =
     typeof ticket?.hazards === "string" && ticket.hazards.trim().length > 0
       ? [ticket.hazards.trim()]
@@ -114,7 +123,10 @@ function tickerToCaller(args: {
         : null;
   return {
     id: sessionId,
-    phone: maskPhone(from),
+    phone:
+      channel === "browser"
+        ? `Browser intake · ${sessionId.slice(0, 6).toUpperCase()}`
+        : maskPhone(from),
     startedAt,
     status,
     language: ticket?.language || undefined,
@@ -125,6 +137,7 @@ function tickerToCaller(args: {
     priority: priorityFromTicket(ticket),
     incidentId,
     confidence,
+    channel,
   };
 }
 
@@ -174,6 +187,9 @@ export function useLivePhoneCallers(): UseLiveCallersResult {
   // the masked phone number we showed at session_start.
   const fromRef = useRef<Record<string, string | undefined>>({});
   const startedAtRef = useRef<Record<string, number>>({});
+  // Track the originating channel per session so phone vs browser pills stay
+  // correct as transcription/ai_analysis events arrive without re-sending it.
+  const channelRef = useRef<Record<string, "phone" | "browser">>({});
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -211,9 +227,10 @@ export function useLivePhoneCallers(): UseLiveCallersResult {
         try {
           const msg = JSON.parse(String(ev.data)) as WsMsg;
           if (!msg || typeof msg !== "object") return;
-          // Only phone sessions surface on the dashboard. Browser intake
-          // already has its own UI at /intake.
-          if (msg.channel && msg.channel !== "phone") return;
+          // Surface BOTH phone and browser intake sessions in the unified
+          // dashboard queue — dispatchers want one place to monitor every
+          // active intake regardless of channel. The card itself renders
+          // a "Browser" pill so they can still tell them apart.
           handleMsg(msg);
         } catch {
           /* ignore malformed frames */
@@ -226,6 +243,7 @@ export function useLivePhoneCallers(): UseLiveCallersResult {
         case "session_start": {
           fromRef.current[msg.sessionId] = msg.from;
           startedAtRef.current[msg.sessionId] = Date.now();
+          if (msg.channel) channelRef.current[msg.sessionId] = msg.channel;
           setCallers((prev) => ({
             ...prev,
             [msg.sessionId]: tickerToCaller({
@@ -234,6 +252,7 @@ export function useLivePhoneCallers(): UseLiveCallersResult {
               startedAt: Date.now(),
               ticket: msg.ticket,
               status: "ringing",
+              channel: channelRef.current[msg.sessionId],
             }),
           }));
           break;
@@ -242,6 +261,7 @@ export function useLivePhoneCallers(): UseLiveCallersResult {
           const startedAt =
             startedAtRef.current[msg.sessionId] ??
             (startedAtRef.current[msg.sessionId] = Date.now());
+          if (msg.channel) channelRef.current[msg.sessionId] = msg.channel;
           setCallers((prev) => {
             const prior = prev[msg.sessionId];
             const next = tickerToCaller({
@@ -252,6 +272,7 @@ export function useLivePhoneCallers(): UseLiveCallersResult {
               status: prior?.status === "ready" ? "ready" : "triaging",
               confidence: prior?.confidence,
               incidentId: prior?.incidentId,
+              channel: channelRef.current[msg.sessionId],
             });
             return { ...prev, [msg.sessionId]: next };
           });
@@ -262,6 +283,7 @@ export function useLivePhoneCallers(): UseLiveCallersResult {
           const startedAt =
             startedAtRef.current[msg.sessionId] ??
             (startedAtRef.current[msg.sessionId] = Date.now());
+          if (msg.channel) channelRef.current[msg.sessionId] = msg.channel;
           const conf = msg.severityScores?.locationConfidence;
           setCallers((prev) => {
             const prior = prev[msg.sessionId];
@@ -274,6 +296,7 @@ export function useLivePhoneCallers(): UseLiveCallersResult {
               confidence:
                 typeof conf === "number" ? Math.round(conf) : prior?.confidence,
               incidentId: prior?.incidentId,
+              channel: channelRef.current[msg.sessionId],
             });
             return { ...prev, [msg.sessionId]: next };
           });
@@ -283,6 +306,7 @@ export function useLivePhoneCallers(): UseLiveCallersResult {
         case "session_end": {
           delete fromRef.current[msg.sessionId];
           delete startedAtRef.current[msg.sessionId];
+          delete channelRef.current[msg.sessionId];
           setCallers((prev) => {
             if (!prev[msg.sessionId]) return prev;
             const next = { ...prev };

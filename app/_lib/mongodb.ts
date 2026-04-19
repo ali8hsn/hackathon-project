@@ -44,3 +44,25 @@ export async function getIncidentsCollection(): Promise<Collection<IncidentDoc>>
   await indexesEnsured;
   return col;
 }
+
+// ─── phone_calls (live + historical Twilio sessions) ─────────────────────
+// Separate from `incidents` so the /phone-calls monitor can show recent
+// calls without polluting the incidents/reports table. Calls promoted to
+// proper incidents (HIGH severity, or part of a 2+ caller cluster) keep
+// a back-reference via `incidentId`.
+export type PhoneCallDoc = MongoDocument & { _id: string };
+
+let phoneCallsIndexesEnsured: Promise<void> | null = null;
+export async function getPhoneCallsCollection(): Promise<Collection<PhoneCallDoc>> {
+  const db = await getDb();
+  const col = db.collection<PhoneCallDoc>("phone_calls");
+  if (!phoneCallsIndexesEnsured) {
+    phoneCallsIndexesEnsured = (async () => {
+      await col.createIndex({ startedAt: -1 });
+      await col.createIndex({ lastSeen: -1 });
+      await col.createIndex({ incidentId: 1 });
+    })();
+  }
+  await phoneCallsIndexesEnsured;
+  return col;
+}

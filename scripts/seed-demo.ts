@@ -1,58 +1,55 @@
 /**
- * Seed script: Suspicious Person Near Elementary School (Austin, TX)
+ * Seed: Multi-Caller Mass Event — Subway Smoke (Boston Park St)
  *
- * Simulates 5 low-priority reports over a few hours about a mysterious person
- * near Becker Elementary. Each report is slightly different — different callers,
- * different details — but all LOW priority individually.
+ * Replaces the Becker Elementary "suspicious person" scenario with a
+ * fresher mass-event situation: smoke pouring from a subway station,
+ * 5 callers in 6 minutes. Each caller is independently MEDIUM, but the
+ * trend-escalation analyzer should promote the cluster to HIGH.
  *
- * After seeding, calls the escalation endpoint so the AI can detect the pattern
- * and promote the cluster to HIGH priority.
+ * All rows tagged `is_demo:true` so the Reports → Live toggle hides them.
  *
- * Usage:
- *   bun run scripts/seed-demo.ts
- *
- * Requires the dev server to be running (bun dev).
+ * Usage: bun run scripts/seed-demo.ts
  */
 
 const API_BASE = "http://localhost:3000";
 
-// Becker Elementary — Northland Drive, Austin, TX
-const SCHOOL_COORDS = { lat: 30.3485, lng: -97.7190 };
+// Park Street MBTA station, Boston Common
+const PARK_ST = { lat: 42.3564, lng: -71.0623 };
 
 const transcripts = [
   {
     transcript:
-      "Hi, I just wanted to report something. There's a man sitting in a dark sedan parked across from Becker Elementary on Northland Drive here in Austin. He's been there for about 30 minutes just sitting in his car. He's not picking up any kids or anything, just watching. I walk my dog past there every morning and I've never seen him before. It's probably nothing but it made me a little uneasy.",
-    caller_id: "CALLER-1 (Dog walker)",
-    coordinates: { lat: SCHOOL_COORDS.lat + 0.0003, lng: SCHOOL_COORDS.lng - 0.0002 },
+      "I'm walking on Tremont Street in Boston and there's a lot of smoke coming up out of the Park Street T entrance. People are running up the stairs coughing. I can smell that burning electrical smell. I haven't seen any fire trucks yet.",
+    caller_id: "CALLER-1 (Pedestrian)",
+    coordinates: { lat: PARK_ST.lat + 0.0002, lng: PARK_ST.lng - 0.0001 },
     delay: 0,
   },
   {
     transcript:
-      "Yeah, I'm a crossing guard at Becker Elementary on Northland Drive in Austin. I noticed a dark colored car, maybe a Honda or Toyota, parked on the street near the playground. There's a man inside wearing sunglasses and a baseball cap. He was there when I started my shift at 7:45 and he's still there now. He hasn't gotten out of the car. Just wanted someone to know about it.",
-    caller_id: "CALLER-2 (Crossing guard)",
-    coordinates: { lat: SCHOOL_COORDS.lat + 0.0001, lng: SCHOOL_COORDS.lng + 0.0001 },
+      "I just got off the inbound Green Line train at Park Street and the platform is filling with smoke. The conductor is telling everyone to evacuate up the stairs. I helped an older man who was wheezing badly. We're all coming out onto the Common now.",
+    caller_id: "CALLER-2 (Commuter)",
+    coordinates: { lat: PARK_ST.lat, lng: PARK_ST.lng },
     delay: 2000,
   },
   {
     transcript:
-      "I'm calling because my daughter told me there was a strange man talking to some kids through the fence at Becker Elementary during recess today. She said he was asking them questions about when school lets out and if they walk home. I'm really concerned. She said he was wearing a dark hat and was near a black car on Northland Drive.",
-    caller_id: "CALLER-3 (Parent)",
-    coordinates: { lat: SCHOOL_COORDS.lat - 0.0002, lng: SCHOOL_COORDS.lng + 0.0003 },
+      "Park Street station Boston — there's heavy smoke and someone fell on the stairs trying to evacuate, I think she hit her head pretty hard. There are at least four or five people coughing badly out here on the sidewalk. We need EMS, not just fire trucks.",
+    caller_id: "CALLER-3 (Off-duty nurse)",
+    coordinates: { lat: PARK_ST.lat - 0.0001, lng: PARK_ST.lng + 0.0002 },
     delay: 2000,
   },
   {
     transcript:
-      "This is the assistant principal at Becker Elementary in Austin. One of our teachers reported that a man approached the east fence during afternoon recess and appeared to be photographing children on the playground. When the teacher walked toward him, he quickly went back to a dark sedan parked on Northland Drive and drove away. He came back about 20 minutes later and parked in the same spot. We've kept the kids inside since then.",
-    caller_id: "CALLER-4 (Asst. Principal)",
-    coordinates: { lat: SCHOOL_COORDS.lat, lng: SCHOOL_COORDS.lng },
+      "This is an MBTA station agent at Park Street, Boston. We've activated the platform fire alarms and pulled the third-rail emergency stop. The smoke is thickest on the Red Line lower platform. I think we still have passengers on a stalled train down there. We need fire department and EMS at every entrance.",
+    caller_id: "CALLER-4 (MBTA staff)",
+    coordinates: { lat: PARK_ST.lat, lng: PARK_ST.lng - 0.0001 },
     delay: 2000,
   },
   {
     transcript:
-      "I live on Northland Drive right across from Becker Elementary in Austin. That dark car is back again — same one from this morning. This is the third time today I've seen it. The man got out this time and was walking along the school fence taking pictures with his phone. When he saw me watching from my window he got back in the car fast. I got a partial plate — it starts with 7-K-J. This is really scaring the neighborhood. Several of us have been texting about it all day.",
-    caller_id: "CALLER-5 (Neighbor)",
-    coordinates: { lat: SCHOOL_COORDS.lat + 0.0002, lng: SCHOOL_COORDS.lng - 0.0001 },
+      "I'm a paramedic off-duty at Park Street station. We have at least eight people with smoke inhalation now sitting on the Common, two are unresponsive but breathing. The smoke is now visible from a block away on Tremont. This is a serious incident — we need a multi-unit EMS response and probably a hazmat team.",
+    caller_id: "CALLER-5 (Off-duty paramedic)",
+    coordinates: { lat: PARK_ST.lat + 0.0001, lng: PARK_ST.lng + 0.0001 },
     delay: 2000,
   },
 ];
@@ -69,6 +66,7 @@ async function ingestTranscript(entry: (typeof transcripts)[number]) {
       caller_id: entry.caller_id,
       coordinates: entry.coordinates,
       haashir_assist_enabled: false,
+      is_demo: true,
     }),
   });
 
@@ -88,12 +86,11 @@ function sleep(ms: number) {
 
 async function main() {
   console.log("═".repeat(70));
-  console.log("🏫 SEED DEMO: Suspicious Person Near Becker Elementary (Austin)");
+  console.log("🚇 SEED DEMO: Subway Smoke Mass Event (Boston Park St)");
   console.log("═".repeat(70));
-  console.log("\nThis script sends 5 low-priority reports through the pipeline,");
-  console.log("then triggers AI trend analysis to detect the escalating pattern.\n");
+  console.log("\nThis script sends 5 caller reports through the pipeline,");
+  console.log("then triggers AI trend analysis to promote the cluster to HIGH.\n");
 
-  // Phase 1: Ingest all transcripts
   console.log("─".repeat(70));
   console.log("PHASE 1: Ingesting 5 caller reports...");
   console.log("─".repeat(70));
@@ -114,7 +111,6 @@ async function main() {
   const flagged = results.filter((r) => r.action === "FLAG_FOR_REVIEW").length;
   console.log(`   Created: ${created} | Updated: ${updated} | Flagged: ${flagged}`);
 
-  // Phase 2: Run trend escalation analysis
   console.log("\n" + "─".repeat(70));
   console.log("PHASE 2: Running AI Trend Escalation Analysis...");
   console.log("─".repeat(70));

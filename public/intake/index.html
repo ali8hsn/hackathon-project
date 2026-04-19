@@ -860,6 +860,12 @@ function handleMsg(msg) {
       break;
     case 'report_ready':
       showReport(msg.report); break;
+    case 'dispatcher_action':
+      if (msg.sessionId && msg.sessionId !== sessionId) break;
+      if (msg.action === 'dispatched') markActionDone('actDispatch', '✓ Dispatched');
+      else if (msg.action === 'joined') markActionDone('actJoin', '🎧 On line');
+      else if (msg.action === 'escalated') markActionDone('actEscalate', '↗ Escalated');
+      break;
     case 'session_start':
       buildTicket(msg.ticket);
       syncMapFromTicket(msg.ticket, msg.sessionId);
@@ -1291,10 +1297,10 @@ function buildTicket(ticket) {
       </div>
     </div>
     <div class="ticket-actions">
-      <button class="t-act red">🚨 Dispatch Now</button>
+      <button class="t-act red" id="actDispatch" onclick="dispatchNow()">🚨 Dispatch Now</button>
       <button class="t-act green" onclick="generateReport()">📋 Report</button>
-      <button class="t-act">📞 Join Call</button>
-      <button class="t-act">↗ Escalate</button>
+      <button class="t-act" id="actJoin" onclick="joinCall()">📞 Join Call</button>
+      <button class="t-act" id="actEscalate" onclick="escalateCall()">↗ Escalate</button>
     </div>`;
   body.appendChild(el);
   let age=0;
@@ -1462,6 +1468,71 @@ async function generateReport() {
 }
 function closeReport(){ g('reportOverlay').classList.remove('show'); }
 function copyReport(){ navigator.clipboard.writeText(lastReport); }
+
+/**
+ * Display a report payload pushed via WebSocket (server-generated, e.g. from
+ * a dispatcher-triggered promote). Mirrors generateReport() but skips the
+ * fetch since we already have the text.
+ */
+function showReport(report) {
+  if (!report) return;
+  lastReport = report;
+  g('reportOverlay').classList.add('show');
+  g('reportContent').textContent = report;
+  g('reportMeta').textContent = `Session ${sessionId?.slice(0,8)||'—'} · ${new Date().toLocaleTimeString()}`;
+}
+
+/** Flip a ticket-action button into a "done" state so the dispatcher can
+ *  see at a glance which actions have already fired for the active call. */
+function markActionDone(id, label) {
+  const el = g(id); if (!el) return;
+  el.disabled = true;
+  el.style.opacity = '0.55';
+  el.style.cursor = 'default';
+  if (label) el.textContent = label;
+}
+
+async function dispatchNow() {
+  if (!sessionId) { alert('No active call.'); return; }
+  markActionDone('actDispatch', '✓ Dispatched');
+  try {
+    await fetch('/api/aria/session/dispatch', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId })
+    });
+  } catch (e) {
+    console.warn('dispatch failed', e);
+  }
+}
+
+async function joinCall() {
+  if (!sessionId) { alert('No active call.'); return; }
+  markActionDone('actJoin', '🎧 On line');
+  try {
+    await fetch('/api/aria/session/join', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId })
+    });
+  } catch (e) {
+    console.warn('join failed', e);
+  }
+}
+
+async function escalateCall() {
+  if (!sessionId) { alert('No active call.'); return; }
+  markActionDone('actEscalate', '↗ Escalated');
+  try {
+    await fetch('/api/aria/session/escalate', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId })
+    });
+  } catch (e) {
+    console.warn('escalate failed', e);
+  }
+}
 </script>
 </body>
 </html>

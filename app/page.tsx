@@ -28,6 +28,7 @@ import { useHighPriorityChime } from "./_components/useHighPriorityChime";
 import { useDemo } from "./_components/DemoHost";
 import { useLiveClusters } from "./_components/useLiveClusters";
 import ClusterCards from "./_components/ClusterCards";
+import { clusterLivePhonePins } from "./_components/livePhoneClusters";
 
 // ─── Severity model ───────────────────────────────────────────────────────
 // Prefer the AI-detected severity stored on the incident (Gemini scorer in
@@ -200,20 +201,36 @@ export default function HomePage() {
     incidentKeys: highIncidentKeys,
   });
 
+  // Joined-bubble clustering: callers reporting the same incident merge
+  // into one bigger amber bubble on the map (same logic as /phone-calls).
+  const liveClusters = useMemo(
+    () => clusterLivePhonePins(livePins),
+    [livePins]
+  );
+
   const pins = useMemo<MapPin[]>(() => {
     // Live phone calls render in amber so dispatchers visually distinguish
     // an active caller from a saved incident. They drop off the map when
     // session_end fires and reappear (with severity color) once the call
     // is persisted to MongoDB on the next /api/incidents poll.
-    const phonePins: MapPin[] = livePins.map((p) => ({
-      id: `live:${p.sessionId}`,
-      lat: p.lat,
-      lng: p.lng,
-      label: p.phone,
-      sublabel: p.ticket?.type || p.ticket?.location || undefined,
-      color: "#f59e0b",
-      active: true,
-    }));
+    const phonePins: MapPin[] = liveClusters.map((c) => {
+      const isJoined = c.pins.length >= 2;
+      const sample = c.pins[0];
+      return {
+        id: `live:${c.id}`,
+        lat: c.lat,
+        lng: c.lng,
+        label: isJoined
+          ? `${c.pins.length} joined callers`
+          : sample.phone,
+        sublabel: isJoined
+          ? c.type || c.location || `${c.pins.length} callers`
+          : sample.ticket?.type || sample.ticket?.location || undefined,
+        color: "#f59e0b",
+        active: true,
+        count: isJoined ? c.pins.length : undefined,
+      };
+    });
     if (liveOnly) return phonePins;
     const incidentPins: MapPin[] = sorted
       .filter(({ incident }) => {
@@ -234,7 +251,7 @@ export default function HomePage() {
         active: hoveredId === incident.id,
       }));
     return [...incidentPins, ...phonePins];
-  }, [sorted, hoveredId, livePins, liveOnly]);
+  }, [sorted, hoveredId, liveClusters, liveOnly]);
 
   const highCount = incidents.filter((i) => i.priority === "HIGH").length;
   const medCount = incidents.filter((i) => i.priority === "MEDIUM").length;
@@ -468,7 +485,7 @@ export default function HomePage() {
                   />
                 </div>
               )}
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-6">
                 <span
                   className="text-[10px] font-bold uppercase tracking-[0.22em]"
                   style={{ color: "rgba(255,255,255,0.45)" }}
@@ -487,15 +504,49 @@ export default function HomePage() {
                   </span>
                 </Link>
               </div>
-              {liveCallers.length > 0 && (
-                <div className="mb-6">
+              {/* Always render the queue area so the dashboard layout
+                  doesn't reflow when calls come and go. Empty state is a
+                  slim inline placeholder that matches the queue shell. */}
+              <div className="mb-6">
+                {liveCallers.length > 0 ? (
                   <LiveCallerQueue
                     callers={liveCallers}
                     title="Live calls"
                     subtitle="Twilio numbers · streaming as the AI extracts details"
                   />
-                </div>
-              )}
+                ) : (
+                  <div
+                    className="rounded-2xl border px-5 py-4 flex items-center gap-3"
+                    style={{
+                      borderColor: "rgba(167,139,250,0.18)",
+                      background:
+                        "linear-gradient(180deg, rgba(167,139,250,0.05), rgba(24,24,34,0.5))",
+                    }}
+                  >
+                    <span
+                      className="material-symbols-outlined text-[20px]"
+                      style={{ color: "rgba(167,139,250,0.7)" }}
+                    >
+                      ring_volume
+                    </span>
+                    <div className="flex-1">
+                      <p
+                        className="text-[11px] font-bold uppercase tracking-[0.18em]"
+                        style={{ color: "rgba(167,139,250,0.85)" }}
+                      >
+                        Listening for inbound calls
+                      </p>
+                      <p
+                        className="text-[12px] mt-0.5"
+                        style={{ color: "rgba(255,255,255,0.55)" }}
+                      >
+                        Live caller cards will appear here the moment Twilio
+                        connects a 911 caller.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
               {liveOnly ? (
                 <div
                   className="rounded-2xl border px-5 py-4 flex items-center gap-3"
@@ -540,7 +591,7 @@ export default function HomePage() {
                 </div>
               ) : (
                 <>
-                  <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center gap-3 mb-6">
                     <span
                       className="h-px flex-1"
                       style={{

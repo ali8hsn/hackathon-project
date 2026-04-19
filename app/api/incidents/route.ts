@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
     location_hint?: string;
     coordinates?: { lat: number; lng: number };
     haashir_assist_enabled?: boolean;
+    is_demo?: boolean;
   };
   try {
     body = await request.json();

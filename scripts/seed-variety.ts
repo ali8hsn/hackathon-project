@@ -1,8 +1,11 @@
 /**
- * Seed: Variety Pack — Low-Priority & Single-Report Incidents
+ * Seed: Variety Pack — Mixed-Severity Calls (Multi-City)
  *
- * A mix of mundane, low-priority calls that a real 911 center gets.
- * Some have 1 report, some have 2. None should be HIGH priority.
+ * Replaces the Austin-heavy "noise complaint / loose dog" set. We seed a
+ * mix of mid-and-low priority calls across five different cities so the
+ * map and reports table feel like a real national feed instead of a
+ * single neighbourhood demo. Every row is tagged `is_demo:true` so the
+ * Reports → Live toggle can hide them.
  *
  * Usage: bun run scripts/seed-variety.ts
  */
@@ -10,98 +13,110 @@
 const API_BASE = "http://localhost:3000";
 
 const scenarios = [
-  // ─── 1. Noise complaint (1 caller) ──────────────────────────────────
+  // ─── 1. Subway smoke (Boston Park St, 3 callers) ──────────────────────
   {
     callers: [
       {
         transcript:
-          "Hi, my neighbor at 712 Guadalupe Street has been playing extremely loud music since about 10 PM. It's now midnight and I have to work in the morning. I've asked them to turn it down but they won't answer the door. It's a house party, there are a bunch of cars parked on the street.",
-        caller_id: "CALLER (Neighbor)",
-        coordinates: { lat: 30.2750, lng: -97.7460 },
+          "There's heavy smoke pouring out of the Park Street subway station in Boston. People are running up the stairs coughing. I can see the smoke from across the Common. No flames visible from outside but the platform must be filling up.",
+        caller_id: "CALLER-1 (Tourist)",
+        coordinates: { lat: 42.3564, lng: -71.0623 },
+      },
+      {
+        transcript:
+          "I'm on the inbound Green Line platform at Park Street and there's smoke coming out of the tunnel. The conductor told everyone to evacuate. An older woman tripped on the stairs, I think she hit her head. We're all heading up to the street now.",
+        caller_id: "CALLER-2 (Commuter)",
+        coordinates: { lat: 42.3563, lng: -71.0625 },
+      },
+      {
+        transcript:
+          "Park Street station, Boston — there's smoke and that burning electrical smell coming up from the platforms. MBTA staff are pulling fire alarms but I don't see any first responders yet. There's a guy on the stairs who can't catch his breath.",
+        caller_id: "CALLER-3 (MBTA staff)",
+        coordinates: { lat: 42.3565, lng: -71.0622 },
       },
     ],
   },
 
-  // ─── 2. Suspicious vehicle (2 callers) ─────────────────────────────
+  // ─── 2. Rooftop fall (Denver, 1 caller) ────────────────────────────────
   {
     callers: [
       {
         transcript:
-          "There's a van that's been parked on West 6th Street for three days now. It has out-of-state plates and the windows are all covered up with cardboard. I haven't seen anyone go in or out of it. It just seems odd.",
-        caller_id: "CALLER-1 (Business owner)",
-        coordinates: { lat: 30.2690, lng: -97.7510 },
+          "A construction worker just fell from the scaffolding on the new building at 16th and Wynkoop in Denver — the LoDo project. He fell maybe two stories onto the sidewalk. He's conscious but he's not moving his legs. We've got someone holding his head still. We need an ambulance fast.",
+        caller_id: "CALLER (Site foreman)",
+        coordinates: { lat: 39.7531, lng: -105.0007 },
+      },
+    ],
+  },
+
+  // ─── 3. EV battery fire (Seattle pier, 2 callers) ──────────────────────
+  {
+    callers: [
+      {
+        transcript:
+          "An electric SUV in the Pier 55 parking lot in Seattle is on fire — I think it's the battery. Flames coming out from under the car, lots of white smoke, and there's this hissing sound. People are backing away. The car next to it is starting to smoke too.",
+        caller_id: "CALLER-1 (Tourist)",
+        coordinates: { lat: 47.6062, lng: -122.3411 },
       },
       {
         transcript:
-          "I want to report an abandoned vehicle on West 6th. It's a white van with Arizona plates, been there since Monday. There's a weird smell coming from it — not like a dead animal, more like chemicals or something. I'm a little concerned.",
+          "I'm on the waterfront in Seattle near Pier 55 and a Tesla is fully on fire. The driver got out, he's okay. The flames keep flaring back up even though someone tried a fire extinguisher. The smoke is really nasty, like chemicals.",
         caller_id: "CALLER-2 (Pedestrian)",
-        coordinates: { lat: 30.2692, lng: -97.7508 },
+        coordinates: { lat: 47.6064, lng: -122.3413 },
       },
     ],
   },
 
-  // ─── 3. Minor fender bender (1 caller) ─────────────────────────────
+  // ─── 4. Drone vs power line (Phoenix, 1 caller) ────────────────────────
   {
     callers: [
       {
         transcript:
-          "I just got into a minor fender bender at the intersection of Congress and Riverside. No one is hurt, both cars are drivable. We've pulled over to the side. The other driver and I are exchanging information. We just need a police report for insurance purposes.",
-        caller_id: "CALLER (Driver)",
-        coordinates: { lat: 30.2600, lng: -97.7440 },
-      },
-    ],
-  },
-
-  // ─── 4. Welfare check request (1 caller) ───────────────────────────
-  {
-    callers: [
-      {
-        transcript:
-          "I'm calling about my elderly mother who lives alone at 2204 East Cesar Chavez. I haven't been able to reach her by phone since yesterday morning. She usually calls me every day. She has diabetes and sometimes has trouble with her blood sugar. Can you send someone to check on her?",
-        caller_id: "CALLER (Daughter)",
-        coordinates: { lat: 30.2555, lng: -97.7280 },
-      },
-    ],
-  },
-
-  // ─── 5. Graffiti / vandalism (1 caller) ────────────────────────────
-  {
-    callers: [
-      {
-        transcript:
-          "Someone spray-painted a bunch of graffiti on the side of my restaurant overnight. It's the Tex-Mex place on South Lamar, near Barton Springs Road. They also smashed one of the front windows. Nobody was inside, we were closed. I noticed it when I came to open up this morning.",
-        caller_id: "CALLER (Restaurant owner)",
-        coordinates: { lat: 30.2610, lng: -97.7680 },
-      },
-    ],
-  },
-
-  // ─── 6. Loose dog reports (2 callers) ──────────────────────────────
-  {
-    callers: [
-      {
-        transcript:
-          "There's a large dog running loose in Zilker Park near the soccer fields. It doesn't have a collar and it's been chasing joggers. It hasn't bitten anyone but it's getting pretty aggressive with people. Looks like a pit bull mix, brown and white.",
-        caller_id: "CALLER-1 (Jogger)",
-        coordinates: { lat: 30.2670, lng: -97.7720 },
-      },
-      {
-        transcript:
-          "I'm at Zilker Park and there's an aggressive stray dog near the playground area. My kids are scared. It growled at another child a few minutes ago. It's a brownish dog, medium to large. Can animal control come get it?",
-        caller_id: "CALLER-2 (Parent)",
-        coordinates: { lat: 30.2668, lng: -97.7718 },
-      },
-    ],
-  },
-
-  // ─── 7. Parking complaint (1 caller) ───────────────────────────────
-  {
-    callers: [
-      {
-        transcript:
-          "Someone has parked their truck blocking my driveway at 1501 East 7th Street. I can't get my car out. It's a red Ford F-150, Texas plates. I've been waiting 20 minutes and no one has come back for it. I need to get to work.",
+          "A big drone — looks commercial, four propellers — just hit a power line over Camelback Road near 24th Street in Phoenix. It's tangled in the wires and there are sparks. A small fire started on the pole. Power just went out on this whole block.",
         caller_id: "CALLER (Resident)",
-        coordinates: { lat: 30.2640, lng: -97.7310 },
+        coordinates: { lat: 33.5093, lng: -112.0303 },
+      },
+    ],
+  },
+
+  // ─── 5. Restaurant brawl (Chicago, 2 callers) ──────────────────────────
+  {
+    callers: [
+      {
+        transcript:
+          "There's a huge fight inside the steakhouse at Wabash and Hubbard in Chicago. Like ten guys, chairs being thrown, broken glass everywhere. One person is bleeding badly from the head. Staff is yelling for everyone to leave.",
+        caller_id: "CALLER-1 (Diner)",
+        coordinates: { lat: 41.8898, lng: -87.6262 },
+      },
+      {
+        transcript:
+          "I just ran out of the steakhouse on Wabash in Chicago — there's a brawl inside, somebody pulled a knife. I think one guy was stabbed in the arm. The fight spilled onto the sidewalk now. I'm watching from across the street.",
+        caller_id: "CALLER-2 (Witness)",
+        coordinates: { lat: 41.8896, lng: -87.6260 },
+      },
+    ],
+  },
+
+  // ─── 6. Apartment carbon monoxide (Brooklyn, 1 caller) ─────────────────
+  {
+    callers: [
+      {
+        transcript:
+          "My carbon monoxide detector at 412 Sterling Place, Brooklyn just started screaming. Two of my kids feel really dizzy and have headaches. We're getting out now but the older couple downstairs aren't answering their door. The whole hallway smells weird.",
+        caller_id: "CALLER (Tenant)",
+        coordinates: { lat: 40.6735, lng: -73.9605 },
+      },
+    ],
+  },
+
+  // ─── 7. Hit-and-run cyclist (Houston, 1 caller) ────────────────────────
+  {
+    callers: [
+      {
+        transcript:
+          "A cyclist just got hit by a black pickup truck on Westheimer near Montrose in Houston. The truck didn't stop — it sped off east. The cyclist is on the ground, conscious but his leg looks broken and there's blood on the road. People are with him but we need EMS now.",
+        caller_id: "CALLER (Driver)",
+        coordinates: { lat: 29.7440, lng: -95.3905 },
       },
     ],
   },
@@ -119,6 +134,7 @@ async function ingestTranscript(entry: { transcript: string; caller_id: string; 
       caller_id: entry.caller_id,
       coordinates: entry.coordinates,
       haashir_assist_enabled: false,
+      is_demo: true,
     }),
   });
 
@@ -134,7 +150,7 @@ function sleep(ms: number) {
 
 async function main() {
   console.log("═".repeat(60));
-  console.log("📋 SEED: Variety Pack — Low-Priority Incidents");
+  console.log("📋 SEED: Variety Pack — Multi-City Mixed Severity");
   console.log("═".repeat(60));
 
   for (let s = 0; s < scenarios.length; s++) {

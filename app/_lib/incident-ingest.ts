@@ -33,8 +33,9 @@ export async function ingestTranscript(body: {
   coordinates?: { lat: number; lng: number };
   haashir_assist_enabled?: boolean;
   extraLogFields?: Record<string, unknown>;
+  is_demo?: boolean;
 }): Promise<Record<string, unknown>> {
-  const { transcript, caller_id, coordinates, haashir_assist_enabled, extraLogFields } = body;
+  const { transcript, caller_id, coordinates, haashir_assist_enabled, extraLogFields, is_demo } = body;
 
   const recent = await findRecentForMatching(25);
   const topMatches: MatchResult[] = buildMatchResults(transcript, recent, 5);
@@ -170,6 +171,7 @@ export async function ingestTranscript(body: {
     severity_score: severity.score,
     icon: getIconForType(decision.type),
     raw_logs: [logEntry],
+    is_demo: !!is_demo,
   });
 
   const report = await generateReport(decision.title, decision.location, [logEntry], [], []);

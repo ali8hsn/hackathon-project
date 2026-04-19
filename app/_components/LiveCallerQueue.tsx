@@ -21,6 +21,7 @@ export interface LiveCaller {
   priority?: "HIGH" | "MEDIUM" | "LOW" | null;
   incidentId?: string;     // populated once promoted to dispatch
   confidence?: number;     // 0..100
+  channel?: "phone" | "browser";
 }
 
 interface Props {
@@ -118,6 +119,11 @@ function CallerCard({ caller }: { caller: LiveCaller }) {
         <div className="min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <StatusPill status={caller.status} />
+            {caller.channel === "browser" && (
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest bg-tertiary-container/40 text-tertiary border border-tertiary/30">
+                Browser
+              </span>
+            )}
             {caller.language && caller.language !== "en" && (
               <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest bg-surface-high text-on-surface-variant">
                 {caller.language.toUpperCase()}

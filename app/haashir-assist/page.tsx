@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAppState } from "../_lib/store";
 import Link from "next/link";
+import ScenarioLab from "../_components/ScenarioLab";
 
 interface TriageIncident {
   id: string;
@@ -131,6 +132,10 @@ export default function HaashirAssistPage() {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-8 pb-8 space-y-8">
+        <ScenarioLab
+          title="Triage Lab"
+          subtitle="Inject a fresh transcript to validate AI assist routing. Each run goes through the same ingest pipeline as a real call."
+        />
         {/* EMPTY STATE */}
         {isEmpty && (
           <div className="flex flex-col items-center justify-center py-24 text-center">

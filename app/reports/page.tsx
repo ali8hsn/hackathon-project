@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Incident } from "../_lib/types";
 import MapView, { type MapPin } from "../_components/MapView";
+import ScenarioLab from "../_components/ScenarioLab";
 
 type SortKey = "severity" | "time" | "name";
 
@@ -68,6 +69,28 @@ export default function ReportsPage() {
   const [sortKey, setSortKey] = useState<SortKey>("severity");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  // "Live only" hides any incident tagged is_demo (created by seed-* scripts
+  // or the ScenarioLab panel). Persisted so a presenter can flip once and
+  // have the choice stick across reloads.
+  const [liveOnly, setLiveOnly] = useState(false);
+  useEffect(() => {
+    try {
+      setLiveOnly(localStorage.getItem("siren.reportsLiveOnly") === "1");
+    } catch {
+      // ignore (private mode)
+    }
+  }, []);
+  const toggleLiveOnly = useCallback(() => {
+    setLiveOnly((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("siren.reportsLiveOnly", next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     async function fetchAll() {
@@ -86,8 +109,16 @@ export default function ReportsPage() {
     fetchAll();
   }, []);
 
+  const demoCount = useMemo(
+    () => incidents.filter((i) => i.isDemo).length,
+    [incidents]
+  );
+
   const rows = useMemo(() => {
-    const decorated = incidents.map((i) => ({
+    const visible = liveOnly
+      ? incidents.filter((i) => !i.isDemo)
+      : incidents;
+    const decorated = visible.map((i) => ({
       incident: i,
       score: severityScore(i),
     }));
@@ -109,7 +140,7 @@ export default function ReportsPage() {
       return a.incident.id.localeCompare(b.incident.id);
     });
     return sorted;
-  }, [incidents, query, sortKey]);
+  }, [incidents, query, sortKey, liveOnly]);
 
   // Pins for the overview map — one per geocoded incident in the current
   // filtered/sorted view. Hover state highlights whichever row the pointer
@@ -166,6 +197,11 @@ export default function ReportsPage() {
           </p>
         </div>
 
+        <ScenarioLab
+          title="Reports Lab"
+          subtitle="Generate a fresh report by injecting a transcript. New rows appear at the top of the archive within seconds."
+        />
+
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-3 mb-5">
           <div className="relative flex-1 min-w-[260px] max-w-md">
@@ -199,8 +235,44 @@ export default function ReportsPage() {
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            onClick={toggleLiveOnly}
+            title={
+              liveOnly
+                ? `Showing only live incidents (${demoCount} demo rows hidden)`
+                : "Showing demo + live incidents"
+            }
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-[10.5px] font-bold uppercase tracking-[0.16em] transition-all"
+            style={{
+              borderColor: liveOnly
+                ? "rgba(34,197,94,0.45)"
+                : "rgba(167,139,250,0.35)",
+              background: liveOnly
+                ? "rgba(34,197,94,0.08)"
+                : "rgba(167,139,250,0.06)",
+              color: liveOnly ? "#86efac" : "rgba(196,181,253,0.95)",
+            }}
+          >
+            <span className="relative flex h-2 w-2">
+              <span
+                className="absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping"
+                style={{ background: liveOnly ? "#22c55e" : "#a78bfa" }}
+              />
+              <span
+                className="relative inline-flex h-2 w-2 rounded-full"
+                style={{ background: liveOnly ? "#22c55e" : "#a78bfa" }}
+              />
+            </span>
+            {liveOnly ? "Live" : "Demo + live"}
+          </button>
           <div className="ml-auto text-[11px] text-on-surface-variant">
             {rows.length} {rows.length === 1 ? "report" : "reports"}
+            {liveOnly && demoCount > 0 ? (
+              <span className="ml-2 opacity-60">
+                · {demoCount} demo hidden
+              </span>
+            ) : null}
           </div>
         </div>
 

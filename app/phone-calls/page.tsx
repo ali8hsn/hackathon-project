@@ -36,6 +36,22 @@ interface VersionInfo {
   deployedAt?: string | null;
 }
 
+interface PersistedPhoneCall {
+  sessionId: string;
+  twilioCallSid?: string | null;
+  from?: string | null;
+  startedAt: number;
+  endedAt?: number | null;
+  lastSeen?: number;
+  ticket?: {
+    type?: string | null;
+    location?: string | null;
+    priority?: string | null;
+    incidentId?: string | null;
+  } | null;
+  incidentId?: string | null;
+}
+
 function relativeTime(ms: number | null | undefined, now: number): string {
   if (!ms) return "never";
   const delta = Math.max(0, Math.floor((now - ms) / 1000));
@@ -77,6 +93,34 @@ export default function PhoneCallsPage() {
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null);
   const [version, setVersion] = useState<VersionInfo | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [recentCalls, setRecentCalls] = useState<PersistedPhoneCall[]>([]);
+
+  // Hydrate the last hour of phone calls on mount so the dashboard isn't
+  // empty after a reload (the WS only delivers live frames). Re-poll once
+  // an hour to slide the window and prune anything older.
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const since = Date.now() - 60 * 60 * 1000;
+        const r = await fetch(`/api/aria/phone-calls?since=${since}`, {
+          cache: "no-store",
+        });
+        if (!r.ok) return;
+        const data = (await r.json()) as { calls?: PersistedPhoneCall[] };
+        if (cancelled) return;
+        setRecentCalls(Array.isArray(data.calls) ? data.calls : []);
+      } catch {
+        // Silent — the page still works with WS-only state.
+      }
+    }
+    load();
+    const id = setInterval(load, 60 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   // Tick the relative-time pills every second.
   useEffect(() => {
@@ -138,6 +182,23 @@ export default function PhoneCallsPage() {
     () => clusters.filter((c) => c.pins.length >= 2),
     [clusters]
   );
+
+  // History = persisted calls from the last hour that are NOT currently
+  // streaming. Sorted newest first so dispatchers can scroll back through
+  // recent activity even after a server restart.
+  const liveSessionIds = useMemo(
+    () => new Set(callers.map((c) => c.id)),
+    [callers]
+  );
+  const recentEnded = useMemo(() => {
+    const cutoff = now - 60 * 60 * 1000;
+    return recentCalls
+      .filter(
+        (c) => !liveSessionIds.has(c.sessionId) && c.startedAt >= cutoff
+      )
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .slice(0, 50);
+  }, [recentCalls, liveSessionIds, now]);
 
   // Map markers: one per cluster centroid. Joined clusters render as a
   // bigger amber bubble with the count baked in (MapView reads `count`).
@@ -310,6 +371,11 @@ export default function PhoneCallsPage() {
             <EmptyCallsCard />
           )}
         </section>
+
+        {/* Persisted recent calls (last hour) — survives server restarts. */}
+        {recentEnded.length > 0 && (
+          <RecentCallsSection calls={recentEnded} now={now} />
+        )}
 
         {/* Event feed */}
         <EventFeed monitor={monitor} now={now} />
@@ -526,6 +592,105 @@ function JoinedIncidents({
           </article>
         ))}
       </div>
+    </section>
+  );
+}
+
+function RecentCallsSection({
+  calls,
+  now,
+}: {
+  calls: PersistedPhoneCall[];
+  now: number;
+}) {
+  return (
+    <section className="mb-8">
+      <div className="flex items-end justify-between mb-3">
+        <div>
+          <h2 className="text-[13px] font-bold uppercase tracking-[0.16em] text-on-surface mb-1">
+            Recent calls · last hour
+          </h2>
+          <p
+            className="text-[12px]"
+            style={{ color: "rgba(255,255,255,0.55)" }}
+          >
+            Persisted to Mongo so the dashboard hydrates after a reload or
+            server restart.
+          </p>
+        </div>
+        <span
+          className="text-[10.5px] font-mono"
+          style={{ color: "rgba(255,255,255,0.45)" }}
+        >
+          {calls.length} call{calls.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      <ul
+        className="rounded-2xl border overflow-hidden divide-y"
+        style={{
+          background: "rgba(24,24,34,0.5)",
+          borderColor: "rgba(255,255,255,0.08)",
+        }}
+      >
+        {calls.map((c) => {
+          const ended = c.endedAt || c.lastSeen || c.startedAt;
+          const duration = Math.max(0, Math.floor((ended - c.startedAt) / 1000));
+          const mm = Math.floor(duration / 60);
+          const ss = String(duration % 60).padStart(2, "0");
+          const ago = relativeTime(c.startedAt, now);
+          const incidentId = c.incidentId || c.ticket?.incidentId || null;
+          return (
+            <li
+              key={c.sessionId}
+              className="grid grid-cols-[160px_minmax(0,1fr)_120px_120px_120px] gap-3 px-4 py-2.5 text-[12px]"
+              style={{ borderColor: "rgba(255,255,255,0.04)" }}
+            >
+              <span
+                className="font-mono truncate"
+                style={{ color: "rgba(255,255,255,0.7)" }}
+              >
+                {c.from || "Unknown"}
+              </span>
+              <span
+                className="truncate text-on-surface"
+                title={c.ticket?.type || ""}
+              >
+                {c.ticket?.type || "—"}
+                {c.ticket?.location ? (
+                  <span style={{ color: "rgba(255,255,255,0.45)" }}>
+                    {" · "}
+                    {c.ticket.location}
+                  </span>
+                ) : null}
+              </span>
+              <span
+                className="font-mono tabular-nums"
+                style={{ color: "rgba(255,255,255,0.55)" }}
+              >
+                {mm}:{ss}
+              </span>
+              <span
+                className="font-mono"
+                style={{ color: "rgba(255,255,255,0.45)" }}
+              >
+                {ago}
+              </span>
+              {incidentId ? (
+                <a
+                  href={`/situation-sheet/${incidentId}`}
+                  className="font-mono text-[11px] underline"
+                  style={{ color: "#a78bfa" }}
+                >
+                  view incident
+                </a>
+              ) : (
+                <span style={{ color: "rgba(255,255,255,0.3)" }}>—</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }

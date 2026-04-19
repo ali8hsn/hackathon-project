@@ -1,8 +1,9 @@
 /**
- * Seed: Medium-Priority Incidents (Austin, TX)
+ * Seed: Medium-Priority Incidents (Multi-City)
  *
- * Scenarios that should classify as MEDIUM — situations needing prompt response
- * but without confirmed immediate threat to life.
+ * Replaces the Austin bar-fight set with fresh MEDIUM scenarios from
+ * five different metros so /reports doesn't look duplicated. All rows
+ * are tagged `is_demo:true`.
  *
  * Usage: bun run scripts/seed-medium.ts
  */
@@ -10,80 +11,80 @@
 const API_BASE = "http://localhost:3000";
 
 const scenarios = [
-  // ─── 1. Bar fight / disturbance (2 callers) ────────────────────────
+  // ─── 1. Bus shelter struck by SUV (Pittsburgh, 2 callers) ─────────────
   {
     callers: [
       {
         transcript:
-          "Yeah, there's a fight breaking out at the bar on Rainey Street in Austin. Two guys are going at it, throwing punches. A couple of tables got knocked over. No weapons that I can see but it's getting pretty heated. There's maybe 30 people watching.",
-        caller_id: "CALLER-1 (Bartender)",
-        coordinates: { lat: 30.2588, lng: -97.7390 },
-      },
-      {
-        transcript:
-          "I'm outside PJ's Sports Bar on Rainey Street and there's a big fight happening inside. Someone just got thrown through the front door. He's bleeding from his face. I think there are at least three or four guys involved now. It's escalating fast.",
-        caller_id: "CALLER-2 (Passerby)",
-        coordinates: { lat: 30.2590, lng: -97.7388 },
-      },
-    ],
-  },
-
-  // ─── 2. Non-injury car crash blocking intersection (2 callers) ─────
-  {
-    callers: [
-      {
-        transcript:
-          "There's been a car accident at the intersection of Lamar Boulevard and Barton Springs Road in Austin. Two cars collided — looks like someone ran the red light. Nobody seems hurt but both cars are blocking the intersection and traffic is backed up in all directions. An airbag deployed in one of the vehicles.",
+          "An SUV just plowed through the bus shelter at Forbes and Atwood in Pittsburgh. The driver looks dazed but he's out of the car. There were two people waiting for the bus — one is sitting up holding her arm, the other is unconscious. Glass everywhere.",
         caller_id: "CALLER-1 (Witness)",
-        coordinates: { lat: 30.2620, lng: -97.7710 },
+        coordinates: { lat: 40.4419, lng: -79.9525 },
       },
       {
         transcript:
-          "I'm stuck in traffic on Barton Springs Road near Lamar in Austin. There's a two-car crash blocking both lanes. Looks like the driver in the sedan might be a little shaken up but I see them standing outside. Traffic is not moving at all. We need someone to direct traffic or clear the scene.",
-        caller_id: "CALLER-2 (Driver in traffic)",
-        coordinates: { lat: 30.2622, lng: -97.7708 },
+          "I'm at the corner of Forbes and Atwood, Pittsburgh — there's a wreck at the bus stop. Looks like the SUV jumped the curb. Two pedestrians down. Traffic is backing up. The driver smells like alcohol from where I'm standing.",
+        caller_id: "CALLER-2 (Cyclist)",
+        coordinates: { lat: 40.4421, lng: -79.9523 },
       },
     ],
   },
 
-  // ─── 3. Shoplifting/theft in progress (1 caller) ───────────────────
+  // ─── 2. Apartment kitchen fire (Atlanta, 2 callers) ───────────────────
   {
     callers: [
       {
         transcript:
-          "I'm the loss prevention officer at the HEB on East 7th Street in Austin. We have a shoplifter who just left the store with about 200 dollars worth of merchandise. Male, mid-20s, wearing a red hoodie and jeans. He's heading east on foot toward Chicon Street. He was aggressive when confronted and pushed one of our employees. We didn't try to stop him.",
+          "There's a kitchen fire on the 4th floor of the Highland Walk apartments at 1100 N Highland in Atlanta. Smoke is coming out of unit 412. Alarms are going off building-wide and people are coming down the stairs. I don't think anyone's still on that floor but I'm not sure.",
+        caller_id: "CALLER-1 (Resident)",
+        coordinates: { lat: 33.7820, lng: -84.3520 },
+      },
+      {
+        transcript:
+          "I'm outside the Highland Walk apartments in Atlanta. There's smoke pouring out of a 4th-floor window and some flames just shot out. We're all evacuated to the parking lot. One of the tenants is asking about her cat but she got out.",
+        caller_id: "CALLER-2 (Neighbor)",
+        coordinates: { lat: 33.7822, lng: -84.3518 },
+      },
+    ],
+  },
+
+  // ─── 3. Stranded driver in flooded underpass (Nashville, 1 caller) ────
+  {
+    callers: [
+      {
+        transcript:
+          "A car is stuck in the flooded underpass at Demonbreun and 16th in Nashville. Water's up to the door handles. The driver is still inside, she rolled the window down. She says her legs hurt and the water keeps rising. We can see her but we can't reach her.",
+        caller_id: "CALLER (Driver)",
+        coordinates: { lat: 36.1530, lng: -86.7895 },
+      },
+    ],
+  },
+
+  // ─── 4. Aggressive shoplifter — assault (Sacramento, 1 caller) ────────
+  {
+    callers: [
+      {
+        transcript:
+          "Loss prevention at the Target on Arden Way in Sacramento. Male shoplifter, mid-30s, red Cardinals hat — he took about $400 of electronics. When our employee tried to stop him at the door he pulled a box cutter and slashed at her. She has a cut on her forearm. Suspect ran into the parking lot toward Arden Fair Mall.",
         caller_id: "CALLER (Loss prevention)",
-        coordinates: { lat: 30.2630, lng: -97.7260 },
+        coordinates: { lat: 38.6004, lng: -121.3850 },
       },
     ],
   },
 
-  // ─── 4. Domestic disturbance (1 caller) ────────────────────────────
+  // ─── 5. Construction crane swinging in wind (Minneapolis, 2 callers) ──
   {
     callers: [
       {
         transcript:
-          "I can hear my neighbors screaming at each other again. The apartment next to mine, unit 304 at the complex on East Riverside Drive near Pleasant Valley in Austin. I can hear things being thrown and broken. There's a woman yelling for help. This has happened before but tonight sounds worse than usual.",
-        caller_id: "CALLER (Neighbor)",
-        coordinates: { lat: 30.2395, lng: -97.7210 },
-      },
-    ],
-  },
-
-  // ─── 5. Minor water main break (2 callers) ────────────────────────
-  {
-    callers: [
-      {
-        transcript:
-          "There's water gushing up from the street on South Lamar near Oltorf in Austin. It looks like a water main broke. The water is flooding onto the sidewalk and into the bike lane. It's not a huge amount but it's been going for at least 30 minutes and it's getting worse.",
-        caller_id: "CALLER-1 (Cyclist)",
-        coordinates: { lat: 30.2415, lng: -97.7650 },
+          "The construction crane on top of the new tower at Nicollet and Washington in Minneapolis is swinging really hard in this wind. The arm is swaying maybe 15 feet. There are still workers on the upper floors. We need someone to call the site foreman.",
+        caller_id: "CALLER-1 (Office worker)",
+        coordinates: { lat: 44.9794, lng: -93.2706 },
       },
       {
         transcript:
-          "I'm calling about the broken water pipe on South Lamar Boulevard. The water is now starting to flood into the street and creating a hazard for drivers. There's a big puddle forming and cars are swerving to avoid it. I almost hydroplaned through it.",
-        caller_id: "CALLER-2 (Driver)",
-        coordinates: { lat: 30.2418, lng: -97.7648 },
+          "I'm watching from across the river — that crane on the new Minneapolis tower is way out of control with this windstorm. A piece of plywood just blew off and landed on the street. Pedestrians need to be moved back, this is going to hurt someone.",
+        caller_id: "CALLER-2 (Bystander)",
+        coordinates: { lat: 44.9798, lng: -93.2709 },
       },
     ],
   },
@@ -101,6 +102,7 @@ async function ingestTranscript(entry: { transcript: string; caller_id: string; 
       caller_id: entry.caller_id,
       coordinates: entry.coordinates,
       haashir_assist_enabled: false,
+      is_demo: true,
     }),
   });
 
@@ -116,7 +118,7 @@ function sleep(ms: number) {
 
 async function main() {
   console.log("═".repeat(60));
-  console.log("⚡ SEED: Medium-Priority Incidents (Austin)");
+  console.log("⚡ SEED: Medium-Priority Incidents (Multi-City)");
   console.log("═".repeat(60));
 
   for (let s = 0; s < scenarios.length; s++) {
