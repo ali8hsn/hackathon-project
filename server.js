@@ -78,6 +78,39 @@ ariaApp.get('/bootstrap', (req, res) => {
   });
 });
 
+/** Forward geocode for intake map (Nominatim; worldwide — use caller address as-is). */
+ariaApp.get('/geocode', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 4) {
+    return res.status(400).json({ error: 'Query too short' });
+  }
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
+  try {
+    const r = await fetch(url, {
+      headers: {
+        'User-Agent': 'SirenDispatch/1.0 (emergency dispatch demo; contact via repo)',
+        Accept: 'application/json'
+      }
+    });
+    if (!r.ok) {
+      return res.status(502).json({ error: 'Geocoder unavailable' });
+    }
+    const data = await r.json();
+    if (!Array.isArray(data) || !data[0]) {
+      return res.json({ lat: null, lon: null, display_name: null });
+    }
+    const row = data[0];
+    res.json({
+      lat: parseFloat(row.lat),
+      lon: parseFloat(row.lon),
+      display_name: row.display_name || null
+    });
+  } catch (err) {
+    console.error('[GEOCODE]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 ariaApp.post('/session/start', (req, res) => {
   const sessionId = uuidv4();
   sessions[sessionId] = {
@@ -230,6 +263,25 @@ ariaApp.post('/transcribe', upload.single('audio'), async (req, res) => {
   }
 });
 
+/** Caller is already on the intake line — never echo “hang up / dial 911” style instructions. */
+function sanitizeAriaResponse(text) {
+  if (text == null || typeof text !== 'string') return text;
+  const patterns = [
+    /\bhang\s*up\s+and\s+(call|dial)\s*(911|nine[\s-]*one[\s-]*one)\b[^.!?]*[.!?]?/gi,
+    /\b(call|dial)\s*(911|nine[\s-]*one[\s-]*one)\s+immediately\b[^.!?]*[.!?]?/gi,
+    /\bplease\s+(call|dial|phone)\s*(911|nine[\s-]*one[\s-]*one)\b[^.!?]*[.!?]?/gi,
+    /\b(if\s+you\s+can,?\s+)?(call|dial)\s*(911|nine[\s-]*one[\s-]*one)\b[^.!?]*[.!?]?/gi,
+    /\bring\s+another\s+phone\s+and\s+(call|dial)\s*911\b[^.!?]*[.!?]?/gi
+  ];
+  let t = text;
+  for (const p of patterns) t = t.replace(p, ' ');
+  t = t.replace(/\s{2,}/g, ' ').replace(/\s+([.!?])/g, '$1').trim();
+  if (t.length < 6) {
+    return "Stay on the line — I'm passing your details to dispatch.";
+  }
+  return t;
+}
+
 async function processWithClaude(sessionId, rawText, englishText) {
   const session = sessions[sessionId];
   if (!session) return;
@@ -242,6 +294,11 @@ async function processWithClaude(sessionId, rawText, englishText) {
   const systemPrompt = `You are Siren, an AI emergency intake assistant for Austin 911 dispatch. You have two jobs:
 1. Extract structured incident data from what the caller is saying
 2. Provide a calm, clear, helpful spoken response to guide the caller
+
+CRITICAL — THE CALLER IS ALREADY ON AN EMERGENCY INTAKE LINE:
+- They are already connected to this system (911 / emergency intake). NEVER tell them to hang up, call 911, dial 911, use another phone, "phone emergency services," or any variant of "hang up and dial 911 immediately."
+- NEVER instruct them to place a new emergency call — help is already being reached through this session.
+- Use "stay on the line," "I'm updating dispatch," or "help is being coordinated" instead of any redirect-to-911 language.
 
 Current ticket state:
 ${JSON.stringify(session.ticket, null, 2)}
@@ -291,6 +348,10 @@ All scores are 0-100. timelineStep is 0-4 (0=call received, 1=location found, 2=
       .trim();
 
     const parsed = JSON.parse(raw);
+
+    if (parsed.ariaResponse) {
+      parsed.ariaResponse = sanitizeAriaResponse(parsed.ariaResponse);
+    }
 
     const updates = parsed.ticketUpdates || {};
     Object.keys(updates).forEach(key => {

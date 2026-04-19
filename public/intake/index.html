@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Siren — Voice intake & dispatch</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>
 :root {
   /* Siren — one shell for voice intake + dispatch tools */
@@ -59,11 +60,9 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .nav-home{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text);text-decoration:none;border:1px solid var(--border2);background:var(--surface2);transition:background .15s,border-color .15s,color .15s;}
 .nav-home:hover{background:var(--surface3);border-color:var(--red);color:var(--red);}
 
-/* MAIN */
-.main{display:flex;flex:1;min-height:0;overflow:hidden;}
-
-/* CALLER PANEL */
-.caller-panel{width:40%;border-right:1px solid var(--border);display:flex;flex-direction:column;}
+/* MAIN — caller | ticket | map */
+.main{display:flex;flex:1;min-height:0;overflow:hidden;flex-direction:row;}
+.caller-panel{width:32%;min-width:260px;border-right:1px solid var(--border);display:flex;flex-direction:column;}
 .panel-hdr{padding:18px 24px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
 .sub{font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--text-muted);text-transform:uppercase;margin-bottom:3px;}
 .panel-hdr h2{font-family:var(--display);font-size:17px;font-weight:700;}
@@ -119,7 +118,23 @@ canvas#wave{width:100%;height:52px;border-radius:6px;background:var(--surface2);
 .btn:disabled{opacity:0.35;cursor:not-allowed;}
 
 /* OPERATOR PANEL */
-.op-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.op-panel{flex:1;min-width:220px;display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--border);}
+
+/* INCIDENT MAP (Leaflet) */
+.map-panel{width:30%;min-width:240px;max-width:420px;display:flex;flex-direction:column;min-height:0;background:var(--surface);}
+.map-hdr{padding:12px 16px 10px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.map-hdr .sub{font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;}
+.map-hdr h2{font-family:var(--display);font-size:15px;font-weight:700;}
+.map-canvas{flex:1;min-height:260px;width:100%;z-index:1;border-radius:0;background:#1a1a1c;}
+.map-canvas .leaflet-container{background:#1a1a1c;font-family:var(--sans);}
+.map-legend{padding:8px 12px;border-top:1px solid var(--border);font-family:var(--mono);font-size:9px;color:var(--text-dim);line-height:1.5;max-height:72px;overflow-y:auto;}
+.map-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;}
+@media(max-width:1100px){
+  .main{flex-direction:column;overflow-y:auto;}
+  .caller-panel{width:100%;min-height:0;border-right:none;border-bottom:1px solid var(--border);}
+  .op-panel{min-height:320px;border-right:none;border-bottom:1px solid var(--border);}
+  .map-panel{width:100%;max-width:none;min-height:360px;}
+}
 .op-hdr{padding:18px 24px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;}
 .op-stats{display:flex;gap:18px;}
 .stat .n{font-family:var(--mono);font-size:20px;font-weight:600;}
@@ -358,6 +373,16 @@ canvas#wave{width:100%;height:52px;border-radius:6px;background:var(--surface2);
       <span id="liveBarText">Waiting for call...</span>
     </div>
   </div>
+
+  <!-- INCIDENT MAP -->
+  <div class="map-panel">
+    <div class="map-hdr">
+      <div class="sub">Live map</div>
+      <h2>Incident locations</h2>
+    </div>
+    <div class="map-canvas" id="incidentMapEl"></div>
+    <div class="map-legend" id="mapLegend">No geocoded locations yet. Address appears when the caller gives a location.</div>
+  </div>
 </div>
 
 </div><!-- app-shell -->
@@ -378,6 +403,7 @@ canvas#wave{width:100%;height:52px;border-radius:6px;background:var(--surface2);
   </div>
 </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let sessionId = null, ws = null, audioStream = null;
@@ -390,6 +416,12 @@ let lastReport = '';
 let ttsQueue = [], ttsSpeaking = false, ttsEnabled = true;
 let lastSpokenText = '';
 const TL = ['Call received by Siren','Location identified','Priority classified','Ticket sent to dispatcher','Units dispatched'];
+
+/** Leaflet: one marker per session; persists across ended calls. */
+let incidentMap = null;
+const mapPins = new Map();
+const mapSessionState = Object.create(null);
+const mapGeocodeTimers = Object.create(null);
 
 function esc(s) {
   if (s == null || s === undefined) return '';
@@ -500,6 +532,7 @@ function finishSetup() {
   ariaSetupDone = true;
   g('setupOverlay').style.display = 'none';
   connectWS(); startClock(); initWave();
+  initIncidentMap();
   g('sysDot').className = 'dot green';
   g('sysText').textContent = 'ONLINE';
 }
@@ -605,6 +638,7 @@ function handleMsg(msg) {
       g('processingBadge').classList.remove('show');
       if (msg.ariaResponse) setARIA(msg.ariaResponse);
       updateTicket(msg.ticket);
+      syncMapFromTicket(msg.ticket, msg.sessionId);
       updateSev(msg.severityScores);
       updateTL(msg.timelineStep);
       updateFlags(msg.keyFlags);
@@ -614,7 +648,9 @@ function handleMsg(msg) {
     case 'report_ready':
       showReport(msg.report); break;
     case 'session_start':
-      buildTicket(msg.ticket); break;
+      buildTicket(msg.ticket);
+      syncMapFromTicket(msg.ticket, msg.sessionId);
+      break;
     case 'error':
       g('processingBadge').classList.remove('show');
       addSys('Error: ' + msg.message); break;
@@ -784,6 +820,159 @@ async function sendTranscriptChunk(delta) {
       body: JSON.stringify({ sessionId, transcriptDelta: delta })
     });
   } catch(e) { console.error('[TRANSCRIPT CHUNK]', e); }
+}
+
+// ── INCIDENT MAP (geocode + priority colors) ─────────────────────────────────
+const AUSTIN_CENTER = [30.2672, -97.7431];
+
+function normalizePriority(p) {
+  if (p == null || p === '') return 'LOW';
+  const u = String(p).toUpperCase();
+  if (u.includes('CRITICAL')) return 'CRITICAL';
+  if (u.includes('HIGH')) return 'HIGH';
+  if (u.includes('MEDIUM')) return 'MEDIUM';
+  if (u.includes('LOW')) return 'LOW';
+  return 'LOW';
+}
+
+function priorityStyle(pri) {
+  const p = normalizePriority(pri);
+  const styles = {
+    CRITICAL: { color: '#450a0a', fillColor: '#7f1d1d', fillOpacity: 0.95, weight: 2 },
+    HIGH: { color: '#7c2d12', fillColor: '#ea580c', fillOpacity: 0.92, weight: 2 },
+    MEDIUM: { color: '#713f12', fillColor: '#facc15', fillOpacity: 0.9, weight: 2 },
+    LOW: { color: '#1e3a8a', fillColor: '#64748b', fillOpacity: 0.88, weight: 2 }
+  };
+  return { radius: 11, ...(styles[p] || styles.LOW) };
+}
+
+function buildMapPopup(sid, address, pri, incidentId) {
+  const short = (sid || '').slice(0, 8);
+  return `<div style="font-family:system-ui,sans-serif;font-size:12px;min-width:170px;line-height:1.4">
+    <strong style="color:#fafafa">${esc(pri)}</strong><br/>
+    <span style="opacity:.9">${esc(address)}</span><br/>
+    <span style="font-size:10px;opacity:.55">Session ${esc(short)}${incidentId ? ' · ' + esc(incidentId) : ''}</span>
+  </div>`;
+}
+
+function initIncidentMap() {
+  const el = g('incidentMapEl');
+  if (!el || typeof L === 'undefined' || incidentMap) return;
+  incidentMap = L.map(el, { zoomControl: true, scrollWheelZoom: true }).setView(AUSTIN_CENTER, 11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(incidentMap);
+  setTimeout(() => incidentMap.invalidateSize(), 200);
+  setTimeout(() => incidentMap.invalidateSize(), 600);
+  if (typeof ResizeObserver !== 'undefined') {
+    const ro = new ResizeObserver(() => {
+      try { incidentMap.invalidateSize(); } catch (e) {}
+    });
+    ro.observe(el);
+  }
+}
+
+function mapFitAll() {
+  if (!incidentMap || mapPins.size === 0) return;
+  const bounds = L.latLngBounds([]);
+  mapPins.forEach((m) => { bounds.extend(m.getLatLng()); });
+  if (bounds.isValid()) incidentMap.fitBounds(bounds.pad(0.18));
+}
+
+function updateMapLegend() {
+  const leg = g('mapLegend');
+  if (!leg) return;
+  if (mapPins.size === 0) {
+    leg.textContent = 'No geocoded locations yet. Address appears when the caller gives a location.';
+    return;
+  }
+  const rows = [];
+  mapPins.forEach((_, sid) => {
+    const st = mapSessionState[sid];
+    if (!st) return;
+    const pri = normalizePriority(st.priority);
+    const col = priorityStyle(pri).fillColor;
+    rows.push(`<span class="map-dot" style="background:${col};box-shadow:0 0 0 1px rgba(0,0,0,.4)"></span>${esc(st.address.slice(0, 42))}${st.address.length > 42 ? '…' : ''} · ${esc(pri)}`);
+  });
+  leg.innerHTML = rows.slice(-8).join('<br/>');
+}
+
+function applyPriorityToMarker(sid, pri) {
+  const m = mapPins.get(sid);
+  if (!m || !mapSessionState[sid]) return;
+  mapSessionState[sid].priority = normalizePriority(pri);
+  m.setStyle(priorityStyle(pri));
+  const st = mapSessionState[sid];
+  m.setPopupContent(buildMapPopup(sid, st.address, st.priority, st.incidentId));
+}
+
+async function placeOrUpdatePin(sid, address, pri, incidentId) {
+  if (!incidentMap || typeof L === 'undefined') return;
+  try {
+    const r = await fetch(`/api/aria/geocode?q=${encodeURIComponent(address)}`);
+    const data = await r.json();
+    if (data.error || data.lat == null || data.lon == null || Number.isNaN(data.lat)) {
+      if (mapPins.size === 0) {
+        const leg = g('mapLegend');
+        if (leg) leg.textContent = 'Could not place address on map — try a fuller street address.';
+      }
+      return;
+    }
+    const ll = [data.lat, data.lon];
+    const style = priorityStyle(pri);
+    let marker = mapPins.get(sid);
+    const popup = buildMapPopup(sid, address, normalizePriority(pri), incidentId);
+    if (marker) {
+      marker.setLatLng(ll);
+      marker.setStyle(style);
+      marker.setPopupContent(popup);
+    } else {
+      marker = L.circleMarker(ll, style).addTo(incidentMap);
+      marker.bindPopup(popup);
+      mapPins.set(sid, marker);
+    }
+    mapSessionState[sid] = {
+      address,
+      priority: normalizePriority(pri),
+      incidentId: incidentId || mapSessionState[sid]?.incidentId || ''
+    };
+    mapFitAll();
+    updateMapLegend();
+  } catch (e) {
+    console.warn('[MAP]', e);
+  }
+}
+
+function scheduleGeocodePin(sid, address, pri, incidentId) {
+  if (mapGeocodeTimers[sid]) clearTimeout(mapGeocodeTimers[sid]);
+  mapGeocodeTimers[sid] = setTimeout(() => {
+    delete mapGeocodeTimers[sid];
+    void placeOrUpdatePin(sid, address, pri, incidentId);
+  }, 450);
+}
+
+function syncMapFromTicket(ticket, forSessionId) {
+  if (!ticket || !forSessionId || !incidentMap) return;
+  const addr = (ticket.location || '').trim();
+  const pri = ticket.priority;
+  const inc = ticket.incidentId || '';
+  if (addr.length < 4) return;
+  const st = mapSessionState[forSessionId];
+  const normPri = normalizePriority(pri);
+  if (st && st.address === addr && mapPins.has(forSessionId)) {
+    if (st.priority !== normPri || st.incidentId !== inc) {
+      mapSessionState[forSessionId] = { ...st, priority: normPri, incidentId: inc || st.incidentId };
+      applyPriorityToMarker(forSessionId, normPri);
+    }
+    return;
+  }
+  mapSessionState[forSessionId] = {
+    address: addr,
+    priority: normPri,
+    incidentId: inc || (st && st.incidentId) || ''
+  };
+  scheduleGeocodePin(forSessionId, addr, normPri, mapSessionState[forSessionId].incidentId);
 }
 
 // ── CALL STOP ─────────────────────────────────────────────────────────────────
