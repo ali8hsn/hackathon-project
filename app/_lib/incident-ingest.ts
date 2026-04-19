@@ -11,7 +11,7 @@ import {
   generateReport,
   suggestPriority,
   type MatchResult,
-} from "./sentinel-ai";
+} from "./haashir-ai";
 import { scoreSeverity } from "./gemini-severity";
 
 function getIconForType(type: string): string {
@@ -31,10 +31,10 @@ export async function ingestTranscript(body: {
   caller_id?: string;
   location_hint?: string;
   coordinates?: { lat: number; lng: number };
-  sentinel_assist_enabled?: boolean;
+  haashir_assist_enabled?: boolean;
   extraLogFields?: Record<string, unknown>;
 }): Promise<Record<string, unknown>> {
-  const { transcript, caller_id, coordinates, sentinel_assist_enabled, extraLogFields } = body;
+  const { transcript, caller_id, coordinates, haashir_assist_enabled, extraLogFields } = body;
 
   const recent = await findRecentForMatching(25);
   const topMatches: MatchResult[] = buildMatchResults(transcript, recent, 5);
@@ -132,7 +132,7 @@ export async function ingestTranscript(body: {
   let aiSuggestion = null;
   let incidentStatus: "active" | "pending_triage" = "active";
 
-  if (sentinel_assist_enabled) {
+  if (haashir_assist_enabled) {
     const suggestion = await suggestPriority(transcript, decision.title, decision.type);
     aiSuggestion = suggestion;
 
@@ -184,7 +184,7 @@ export async function ingestTranscript(body: {
     status: incidentStatus,
     message:
       incidentStatus === "pending_triage"
-        ? `Created incident in triage queue (Sentinel Assist): ${decision.title}`
+        ? `Created incident in triage queue (Haashir Assist): ${decision.title}`
         : `Created new incident: ${decision.title}`,
   };
 }

@@ -5,23 +5,23 @@ import { createContext, useContext, useReducer, type ReactNode } from "react";
 // ─── State Shape ─────────────────────────────────────────────────────────────
 
 interface AppState {
-  sentinelAssistEnabled: boolean;
+  haashirAssistEnabled: boolean;
 }
 
-type Action = { type: "TOGGLE_SENTINEL_ASSIST" } | { type: "SET_SENTINEL_ASSIST"; payload: boolean };
+type Action = { type: "TOGGLE_HAASHIR_ASSIST" } | { type: "SET_HAASHIR_ASSIST"; payload: boolean };
 
 const initialState: AppState = {
-  sentinelAssistEnabled: false,
+  haashirAssistEnabled: false,
 };
 
 // ─── Reducer ─────────────────────────────────────────────────────────────────
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
-    case "TOGGLE_SENTINEL_ASSIST":
-      return { ...state, sentinelAssistEnabled: !state.sentinelAssistEnabled };
-    case "SET_SENTINEL_ASSIST":
-      return { ...state, sentinelAssistEnabled: action.payload };
+    case "TOGGLE_HAASHIR_ASSIST":
+      return { ...state, haashirAssistEnabled: !state.haashirAssistEnabled };
+    case "SET_HAASHIR_ASSIST":
+      return { ...state, haashirAssistEnabled: action.payload };
     default:
       return state;
   }

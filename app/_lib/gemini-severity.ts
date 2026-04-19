@@ -1,7 +1,7 @@
 // ─── Gemini Severity Scorer ──────────────────────────────────────────────
 // Standalone scorer that maps an emergency call transcript to a 1-10
 // severity score. Used purely as an additive signal on top of Claude's
-// CREATE/UPDATE/priority decision in `sentinel-ai.ts`.
+// CREATE/UPDATE/priority decision in `haashir-ai.ts`.
 
 import { GoogleGenAI } from "@google/genai";
 

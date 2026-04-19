@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { isMongoConfigured } from "../../../_lib/mongodb";
 import { ingestTranscript } from "../../../_lib/incident-ingest";
-import { transcribeAudio } from "../../../_lib/sentinel-ai";
+import { transcribeAudio } from "../../../_lib/haashir-ai";
 
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     await ingestTranscript({
       transcript,
       caller_id: callerId,
-      sentinel_assist_enabled: true,
+      haashir_assist_enabled: true,
       extraLogFields: {
         source: "twilio_call",
         callSid: callSid || undefined,

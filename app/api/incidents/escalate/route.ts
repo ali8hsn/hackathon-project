@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { isMongoConfigured } from "../../../_lib/mongodb";
 import { findActiveForTrendAnalysis, updateManyByIds } from "../../../_lib/incidents-repo";
-import { analyzeTrendEscalation } from "../../../_lib/sentinel-ai";
+import { analyzeTrendEscalation } from "../../../_lib/haashir-ai";
 
 export async function POST(request: NextRequest) {
   if (!isMongoConfigured()) {

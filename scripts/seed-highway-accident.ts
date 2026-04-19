@@ -44,7 +44,7 @@ async function ingestTranscript(entry: (typeof transcripts)[number]) {
       transcript: entry.transcript,
       caller_id: entry.caller_id,
       coordinates: entry.coordinates,
-      sentinel_assist_enabled: false,
+      haashir_assist_enabled: false,
     }),
   });
 

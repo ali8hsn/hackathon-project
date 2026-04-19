@@ -19,8 +19,8 @@ interface TriageIncident {
   transcript: Array<{ time: string; speaker: string; text: string }>;
 }
 
-export default function SentinelAssistPage() {
-  const { sentinelAssistEnabled } = useAppState();
+export default function HaashirAssistPage() {
+  const { haashirAssistEnabled } = useAppState();
   const [triageQueue, setTriageQueue] = useState<TriageIncident[]>([]);
   const [autoFlagged, setAutoFlagged] = useState<TriageIncident[]>([]);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -98,7 +98,7 @@ export default function SentinelAssistPage() {
               <span className="text-brand">Siren</span> · AI triage
             </h1>
             <p className="text-on-surface-variant text-sm max-w-xl">
-              {sentinelAssistEnabled
+              {haashirAssistEnabled
                 ? "AI assist is active. Incoming incidents are triaged automatically — high-priority cases are auto-flagged."
                 : "AI assist is off. New incidents still appear on Situations without the triage queue."
               }
@@ -106,15 +106,15 @@ export default function SentinelAssistPage() {
           </div>
           <div className="flex gap-4">
             <div className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
-              sentinelAssistEnabled
+              haashirAssistEnabled
                 ? "bg-tertiary-container border border-tertiary/20"
                 : "bg-surface border border-outline-variant/10"
             }`}>
-              <span className={`w-2 h-2 rounded-full ${sentinelAssistEnabled ? "bg-tertiary animate-pulse" : "bg-on-surface-variant/30"}`} />
+              <span className={`w-2 h-2 rounded-full ${haashirAssistEnabled ? "bg-tertiary animate-pulse" : "bg-on-surface-variant/30"}`} />
               <span className={`text-[10px] font-bold uppercase tracking-widest ${
-                sentinelAssistEnabled ? "text-tertiary" : "text-on-surface-variant"
+                haashirAssistEnabled ? "text-tertiary" : "text-on-surface-variant"
               }`}>
-                {sentinelAssistEnabled ? "Active" : "Inactive"}
+                {haashirAssistEnabled ? "Active" : "Inactive"}
               </span>
             </div>
             <div className="bg-surface text-right px-4 py-2 rounded-lg border border-outline-variant/10">
@@ -139,7 +139,7 @@ export default function SentinelAssistPage() {
             </span>
             <h2 className="text-xl font-bold text-on-surface mb-2">No Incidents in Triage</h2>
             <p className="text-sm text-on-surface-variant max-w-md">
-              {sentinelAssistEnabled
+              {haashirAssistEnabled
                 ? "Siren is listening for new incidents. AI triage will surface items here for review."
                 : "Turn on AI assist from the top bar to enable automated triage on incoming incidents."
               }

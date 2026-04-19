@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { isMongoConfigured } from "../../../_lib/mongodb";
 import { findIncidentById, updateIncident, transformDbToFrontend } from "../../../_lib/incidents-repo";
-import { generateReport } from "../../../_lib/sentinel-ai";
+import { generateReport } from "../../../_lib/haashir-ai";
 
 export async function GET(
   _request: NextRequest,

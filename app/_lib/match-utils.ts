@@ -1,5 +1,5 @@
 import type { IncidentRow } from "./incidents-repo";
-import type { MatchResult } from "./sentinel-ai";
+import type { MatchResult } from "./haashir-ai";
 
 function scoreOverlap(a: string, b: string): number {
   const wa = new Set(a.toLowerCase().split(/\W+/).filter((w) => w.length > 2));

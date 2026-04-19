@@ -106,7 +106,7 @@ async function ingestTranscript(entry: { transcript: string; caller_id: string; 
       transcript: entry.transcript,
       caller_id: entry.caller_id,
       coordinates: entry.coordinates,
-      sentinel_assist_enabled: false,
+      haashir_assist_enabled: false,
     }),
   });
 
