@@ -12,6 +12,7 @@ import {
   suggestPriority,
   type MatchResult,
 } from "./sentinel-ai";
+import { scoreSeverity } from "./gemini-severity";
 
 function getIconForType(type: string): string {
   const t = type.toLowerCase();
@@ -68,9 +69,15 @@ export async function ingestTranscript(body: {
           ? { ...logEntry, flaggedForReview: true, confidence: decision.confidence_score }
           : logEntry;
 
+      const mergedCallerCount = currentCallerCount + 1;
+      const effectivePriority =
+        (decision.priority as "HIGH" | "MEDIUM" | "LOW") ??
+        (existing.priority as "HIGH" | "MEDIUM" | "LOW") ??
+        "LOW";
+
       const updatePayload: Record<string, unknown> = {
         raw_logs: [...currentLogs, enrichedLogEntry],
-        caller_count: currentCallerCount + 1,
+        caller_count: mergedCallerCount,
         description: decision.structured_summary,
       };
 
@@ -80,6 +87,18 @@ export async function ingestTranscript(body: {
         updatePayload.priority = decision.priority;
         updatePayload.risk_index = decision.severity_level;
       }
+
+      // AI severity — recompute with merged context, only ratchet upward.
+      const newScore = await scoreSeverity({
+        transcript,
+        title: existing.title || decision.title,
+        type: existing.type || decision.type,
+        priority: effectivePriority,
+        callerCount: mergedCallerCount,
+      });
+      const prevScore =
+        typeof existing.severity_score === "number" ? existing.severity_score : 0;
+      updatePayload.severity_score = Math.max(prevScore, newScore.score);
 
       if (newConflicts.length > 0) {
         updatePayload.conflicts = mergedConflicts;
@@ -127,6 +146,14 @@ export async function ingestTranscript(body: {
 
   const coords = coordinates ?? { lat: 0, lng: 0 };
 
+  const severity = await scoreSeverity({
+    transcript,
+    title: decision.title,
+    type: decision.type,
+    priority: decision.priority,
+    callerCount: 1,
+  });
+
   const newRow = await insertIncident({
     title: decision.title,
     type: decision.type,
@@ -140,6 +167,7 @@ export async function ingestTranscript(body: {
     confidence: decision.confidence_score,
     caller_count: 1,
     risk_index: decision.severity_level,
+    severity_score: severity.score,
     icon: getIconForType(decision.type),
     raw_logs: [logEntry],
   });

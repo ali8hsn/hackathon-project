@@ -11,3 +11,5 @@ node_modules/
 *.tsbuildinfo
 npm-debug.log*
 coverage/
+.cache/
+.cursor/

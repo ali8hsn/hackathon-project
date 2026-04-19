@@ -3,79 +3,197 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const navItems = [
-  { href: "/intake", label: "Voice intake", icon: "call" },
-  { href: "/", label: "Situations", icon: "monitoring" },
-  { href: "/trend-detection", label: "Trend detection", icon: "map" },
-  { href: "/sentinel-assist", label: "AI assist", icon: "smart_toy" },
+const primaryNav = [
+  { href: "/", label: "Home", icon: "home_work" },
+  { href: "/reports", label: "Reports", icon: "description" },
 ];
 
-const bottomItems = [
-  { href: "#", label: "Support", icon: "help" },
-  { href: "#", label: "Settings", icon: "settings" },
+const secondaryNav = [
+  { href: "/intake", label: "Voice Intake", icon: "call" },
+  { href: "/sentinel-assist", label: "AI Assist", icon: "smart_toy" },
+  { href: "/trend-detection", label: "Trends", icon: "query_stats" },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
 
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname?.startsWith(href);
+
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 bg-bg flex flex-col border-r border-outline-variant/20 z-50">
+    <aside
+      className="fixed left-0 top-0 h-full w-64 flex flex-col border-r z-50"
+      style={{
+        background: "rgba(10, 10, 15, 0.92)",
+        backdropFilter: "blur(20px) saturate(140%)",
+        WebkitBackdropFilter: "blur(20px) saturate(140%)",
+        borderColor: "rgba(255, 255, 255, 0.06)",
+      }}
+    >
       {/* Brand */}
-      <div className="p-6">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 rounded-lg bg-brand-dim flex items-center justify-center border border-brand/30">
-            <span className="material-symbols-outlined text-brand" style={{ fontVariationSettings: "'FILL' 1" }}>
-              emergency
+      <div className="px-6 pt-7 pb-6">
+        <Link href="/" className="flex items-center gap-3 group">
+          <div
+            className="relative h-10 w-10 rounded-xl flex items-center justify-center shrink-0"
+            style={{
+              background: "linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%)",
+              boxShadow: "0 4px 20px rgba(167, 139, 250, 0.3)",
+            }}
+          >
+            <span
+              className="material-symbols-outlined text-white text-[22px]"
+              style={{ fontVariationSettings: "'FILL' 1 'wght' 600" }}
+            >
+              graphic_eq
             </span>
           </div>
-          <div>
-            <h2 className="text-lg font-black tracking-tight text-on-surface leading-none">
+          <div className="min-w-0">
+            <h1 className="text-[20px] font-black tracking-tight leading-none flex items-baseline gap-1.5 text-white">
               Siren
-            </h2>
-            <p className="text-[9px] text-on-surface-variant uppercase tracking-[0.18em] mt-1">
-              Voice · Dispatch · AI
+              <span
+                className="font-display text-[21px] italic"
+                style={{ color: "#a78bfa" }}
+              >
+                AI
+              </span>
+            </h1>
+            <p
+              className="text-[9px] uppercase tracking-[0.22em] mt-1.5 font-semibold"
+              style={{ color: "rgba(255, 255, 255, 0.5)" }}
+            >
+              Dispatch console
             </p>
           </div>
-        </div>
-
-
-
-        {/* Main Navigation */}
-        <nav className="space-y-1">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-4 py-3.5 px-5 text-xs font-bold uppercase tracking-tight transition-all duration-200 ${
-                  isActive
-                    ? "bg-surface-high text-brand rounded-r-full shadow-[4px_0_12px_rgba(232,40,26,0.12)] border-l-2 border-brand"
-                    : "text-on-surface-variant hover:text-on-surface hover:bg-surface-low rounded-r-full"
-                }`}
-              >
-                <span className="material-symbols-outlined text-lg">{item.icon}</span>
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
+        </Link>
       </div>
 
-      {/* Bottom Navigation */}
-      <div className="mt-auto p-6 border-t border-outline-variant/10">
-        <nav className="space-y-1">
-          {bottomItems.map((item) => (
-            <a
-              key={item.label}
+      <div
+        className="h-px mx-6 mb-4"
+        style={{
+          background:
+            "linear-gradient(to right, transparent, rgba(255,255,255,0.1), transparent)",
+        }}
+      />
+
+      {/* Primary nav */}
+      <nav className="px-4 space-y-1">
+        {primaryNav.map((item) => {
+          const active = isActive(item.href);
+          return (
+            <Link
+              key={item.href}
               href={item.href}
-              className="flex items-center gap-4 text-[#64748b] hover:text-[#94a3b8] py-2.5 px-2 text-[10px] font-bold uppercase tracking-tight transition-colors"
+              className="group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold tracking-tight transition-all duration-200"
+              style={{
+                background: active
+                  ? "linear-gradient(90deg, rgba(167,139,250,0.18), rgba(167,139,250,0.04))"
+                  : "transparent",
+                color: active ? "#c4b5fd" : "rgba(255,255,255,0.65)",
+              }}
             >
-              <span className="material-symbols-outlined text-sm">{item.icon}</span>
+              {active && (
+                <span
+                  className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-r-full"
+                  style={{
+                    background: "#a78bfa",
+                    boxShadow: "0 0 12px rgba(167,139,250,0.6)",
+                  }}
+                />
+              )}
+              <span
+                className="material-symbols-outlined text-[20px]"
+                style={
+                  active
+                    ? { fontVariationSettings: "'FILL' 1 'wght' 500" }
+                    : undefined
+                }
+              >
+                {item.icon}
+              </span>
               <span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Tools section */}
+      <p
+        className="px-7 mt-7 mb-2 text-[9px] font-bold uppercase tracking-[0.22em]"
+        style={{ color: "rgba(255,255,255,0.35)" }}
+      >
+        Tools
+      </p>
+      <nav className="px-4 space-y-0.5">
+        {secondaryNav.map((item) => {
+          const active = isActive(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex items-center gap-3 px-3 py-2 rounded-lg text-[12px] font-medium transition-all duration-200 hover:bg-white/5"
+              style={{
+                color: active ? "white" : "rgba(255,255,255,0.55)",
+                background: active ? "rgba(255,255,255,0.06)" : undefined,
+              }}
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                {item.icon}
+              </span>
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Status card */}
+      <div
+        className="mx-4 mt-7 rounded-2xl p-4 border"
+        style={{
+          background: "rgba(167, 139, 250, 0.06)",
+          borderColor: "rgba(167, 139, 250, 0.2)",
+        }}
+      >
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className="relative flex h-2 w-2">
+            <span
+              className="absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping"
+              style={{ background: "#a78bfa" }}
+            />
+            <span
+              className="relative inline-flex h-2 w-2 rounded-full"
+              style={{ background: "#a78bfa" }}
+            />
+          </span>
+          <p
+            className="text-[9.5px] font-bold uppercase tracking-[0.18em]"
+            style={{ color: "#c4b5fd" }}
+          >
+            System online
+          </p>
+        </div>
+        <p
+          className="text-[11px] leading-relaxed"
+          style={{ color: "rgba(255,255,255,0.55)" }}
+        >
+          Listening on all intake channels. Transcripts streaming live.
+        </p>
+      </div>
+
+      {/* Bottom */}
+      <div
+        className="mt-auto px-4 pb-5 pt-4 border-t"
+        style={{ borderColor: "rgba(255,255,255,0.06)" }}
+      >
+        <a
+          href="#"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-[11px] font-semibold transition-colors hover:bg-white/5"
+          style={{ color: "rgba(255,255,255,0.45)" }}
+        >
+          <span className="material-symbols-outlined text-[16px]">
+            settings
+          </span>
+          <span>Settings</span>
+        </a>
       </div>
     </aside>
   );

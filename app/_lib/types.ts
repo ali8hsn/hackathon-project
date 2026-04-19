@@ -16,6 +16,7 @@ export interface Incident {
   elapsedTime: string;
   casualties: number;
   riskIndex: string;
+  severityScore?: number;
   unitsAssigned: string[];
   icon: string;
   confidenceScore: number;

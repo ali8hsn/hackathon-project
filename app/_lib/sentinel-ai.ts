@@ -390,17 +390,23 @@ ${logText}
 ${aggregatedDetails.length > 0 ? `AGGREGATED DETAILS: ${JSON.stringify(aggregatedDetails)}` : ""}
 ${conflicts.length > 0 ? `CONFLICTS: ${JSON.stringify(conflicts)}` : ""}
 
-Write the report in this format:
-**Incident Summary:** <1-2 sentence overview>
+Write the report using EXACTLY this markdown format:
 
-**Key Facts:**
-- <bullet points of confirmed facts>
+## INCIDENT SUMMARY
+<1-2 sentence factual overview>
 
-**Conflicting Reports:** (if any)
-- <note any discrepancies between callers>
+## KEY FACTS
+- <confirmed fact from transcripts>
+- <confirmed fact from transcripts>
 
-**AI Recommendation:**
-<tactical recommendation for dispatchers>`;
+## NATURE OF EMERGENCY
+<brief description of the emergency type and immediate hazards>
+
+${conflicts.length > 0 ? "## CONFLICTING REPORTS\n- <discrepancies between callers>\n\n" : ""}\
+## DISPATCH RECOMMENDATION
+<single clear paragraph with tactical recommendation — units needed, priority actions, hazards to note>
+
+Rules: Use only the section headers above. No speculation. Facts only. Keep each section brief and actionable.`;
 
   const text = await claudeText(
     "You are an emergency dispatch AI assistant. Write clear, factual, actionable reports. No speculation. Use markdown formatting with ** for bold headers.",

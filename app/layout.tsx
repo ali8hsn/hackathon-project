@@ -8,13 +8,13 @@ import { AppProvider } from "./_lib/store";
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
-  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
+  weight: ["300", "400", "500", "600", "700", "800", "900"],
 });
 
 export const metadata: Metadata = {
-  title: "Siren — Voice intake & dispatch intelligence",
+  title: "Siren AI — dispatch console",
   description:
-    "Siren unifies live 911 voice intake with AI dispatch monitoring, triage, and situational awareness.",
+    "Siren AI is an operator-facing 911 console. Live voice intake, AI triage, and situational awareness for dispatchers.",
 };
 
 export default function RootLayout({
@@ -23,17 +23,33 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} dark h-full antialiased`}>
+    <html
+      lang="en"
+      className={`${inter.variable} dark h-full antialiased`}
+    >
       <head>
+        {/* Material Symbols */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+          rel="stylesheet"
+        />
+        {/* Instrument Serif — editorial headline font */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link
+          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap"
+          rel="stylesheet"
+        />
+        {/* MapLibre GL (CDN, no API key) */}
+        <link
+          href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css"
           rel="stylesheet"
         />
       </head>
       <body className="min-h-full flex overflow-hidden bg-bg text-on-surface font-sans">
         <AppProvider>
           <Sidebar />
-          <div className="ml-64 flex-1 flex flex-col h-screen overflow-hidden">
+          <div className="ml-64 flex-1 flex flex-col h-screen overflow-hidden relative z-10">
             <TopNav />
             <main className="flex-1 overflow-hidden">{children}</main>
           </div>

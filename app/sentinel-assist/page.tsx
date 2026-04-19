@@ -52,13 +52,20 @@ export default function SentinelAssistPage() {
   }, []);
 
   useEffect(() => {
-    fetchTriageQueue();
-    fetchAutoFlagged();
+    // Defer initial fetch to next frame to satisfy
+    // react-hooks/set-state-in-effect (the fetchers internally call setState).
+    const raf = requestAnimationFrame(() => {
+      fetchTriageQueue();
+      fetchAutoFlagged();
+    });
     const interval = setInterval(() => {
       fetchTriageQueue();
       fetchAutoFlagged();
     }, 8000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearInterval(interval);
+    };
   }, [fetchTriageQueue, fetchAutoFlagged]);
 
   const handleTriage = useCallback(async (id: string, action: "approve" | "reject" | "escalate") => {

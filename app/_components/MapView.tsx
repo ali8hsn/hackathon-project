@@ -1,146 +1,353 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+// ─── MapView (MapLibre GL) ───────────────────────────────────────────────────
+// Dark vector map with severity-colored pins. Auto-fits bounds when multiple
+// pins are present, centers on single pin otherwise. Falls back to downtown
+// Austin if no valid coordinates are given.
+//
+// Loads MapLibre GL from CDN — no npm install, no API key. Uses CARTO's free
+// dark basemap (public, attribution required, no token).
 
-// Downtown Austin, TX fallback
-const AUSTIN_CENTER = { lat: 30.2672, lng: -97.7431 };
+import { useEffect, useRef } from "react";
 
-interface MapViewProps {
-  center?: { lat: number; lng: number } | string | null;
-  pinCount?: number;
-  className?: string;
+// ── Types ───────────────────────────────────────────────────────────────────
+export interface MapPin {
+  id: string;
+  lat: number;
+  lng: number;
+  label?: string;
+  severity?: number; // 1..10
+  active?: boolean;
 }
 
-function parseCoords(input: MapViewProps["center"]): { lat: number; lng: number } {
-  if (!input) return AUSTIN_CENTER;
+interface MapViewProps {
+  pins?: MapPin[];
+  /** Back-compat: caller can still pass a single `center` or coord string. */
+  center?: { lat: number; lng: number } | string | null;
+  /** Back-compat: when using `center`, `pinCount` fakes N scattered pins. */
+  pinCount?: number;
+  className?: string;
+  /** Called when user clicks a pin. */
+  onPinClick?: (pin: MapPin) => void;
+}
 
-  // Handle JSON string from DB
+// ── Config ──────────────────────────────────────────────────────────────────
+const AUSTIN_CENTER = { lat: 30.2672, lng: -97.7431 };
+
+// CARTO's public dark-matter vector style — no token required
+const MAP_STYLE =
+  "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
+
+const MAPLIBRE_JS = "https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js";
+
+function severityColor(sev?: number): string {
+  if (!sev || sev < 1) return "#94a3b8";
+  const clamped = Math.max(1, Math.min(10, Math.round(sev)));
+  const ramp: Record<number, string> = {
+    1: "#2dd4bf",
+    2: "#4ade80",
+    3: "#a3e635",
+    4: "#facc15",
+    5: "#fb923c",
+    6: "#f97316",
+    7: "#ef4444",
+    8: "#dc2626",
+    9: "#b91c1c",
+    10: "#7f1d1d",
+  };
+  return ramp[clamped];
+}
+
+// ── Helper: parse legacy `center` input ────────────────────────────────────
+function parseCenter(
+  input: MapViewProps["center"]
+): { lat: number; lng: number } {
+  if (!input) return AUSTIN_CENTER;
   if (typeof input === "string") {
     try {
-      const parsed = JSON.parse(input);
-      if (parsed && typeof parsed.lat === "number" && typeof parsed.lng === "number" && parsed.lat !== 0 && parsed.lng !== 0) {
-        return parsed;
-      }
+      const p = JSON.parse(input);
+      if (
+        p &&
+        typeof p.lat === "number" &&
+        typeof p.lng === "number" &&
+        p.lat !== 0 &&
+        p.lng !== 0
+      )
+        return p;
     } catch {
-      // Invalid JSON
+      /* ignore */
     }
     return AUSTIN_CENTER;
   }
-
-  // Handle object
-  if (typeof input.lat === "number" && typeof input.lng === "number" && input.lat !== 0 && input.lng !== 0) {
+  if (
+    typeof input.lat === "number" &&
+    typeof input.lng === "number" &&
+    input.lat !== 0 &&
+    input.lng !== 0
+  )
     return input;
-  }
-
   return AUSTIN_CENTER;
 }
 
-/**
- * Leaflet-based interactive map loaded from CDN.
- * Shows `pinCount` pins scattered around `center`.
- * Falls back to downtown Austin if coordinates are missing or (0,0).
- */
-export default function MapView({ center, pinCount = 1, className = "" }: MapViewProps) {
+// ── Script loader (once per page) ──────────────────────────────────────────
+/* eslint-disable @typescript-eslint/no-explicit-any */
+let mapLibrePromise: Promise<any> | null = null;
+function loadMapLibre(): Promise<any> {
+  if (typeof window === "undefined")
+    return Promise.reject(new Error("SSR"));
+  const w = window as any;
+  if (w.maplibregl) return Promise.resolve(w.maplibregl);
+  if (mapLibrePromise) return mapLibrePromise;
+  mapLibrePromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector(
+      `script[src="${MAPLIBRE_JS}"]`
+    ) as HTMLScriptElement | null;
+    const onReady = () => {
+      if ((window as any).maplibregl) resolve((window as any).maplibregl);
+      else reject(new Error("MapLibre failed to load"));
+    };
+    if (existing) {
+      existing.addEventListener("load", onReady, { once: true });
+      existing.addEventListener(
+        "error",
+        () => reject(new Error("MapLibre script error")),
+        { once: true }
+      );
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = MAPLIBRE_JS;
+    s.async = true;
+    s.onload = onReady;
+    s.onerror = () => reject(new Error("MapLibre script error"));
+    document.head.appendChild(s);
+  });
+  return mapLibrePromise;
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+// ── Component ──────────────────────────────────────────────────────────────
+export default function MapView({
+  pins,
+  center,
+  pinCount = 1,
+  className = "",
+  onPinClick,
+}: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapRef = useRef<any>(null);
-  const initRef = useRef(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const markersRef = useRef<any[]>([]);
 
-  const validCenter = parseCoords(center);
+  // Resolve effective pin set (new API wins; otherwise derive from center+count)
+  const effectivePins: MapPin[] =
+    pins && pins.length > 0
+      ? pins
+      : Array.from({ length: Math.max(1, pinCount) }, (_, i) => {
+          const c = parseCenter(center);
+          const offsetLat =
+            pinCount > 1 ? (Math.sin(i * 2.3) * 0.5) * 0.004 : 0;
+          const offsetLng =
+            pinCount > 1 ? (Math.cos(i * 2.3) * 0.5) * 0.004 : 0;
+          return {
+            id: `pin-${i}`,
+            lat: c.lat + offsetLat,
+            lng: c.lng + offsetLng,
+            label: pinCount > 1 ? `Report #${i + 1}` : undefined,
+          };
+        });
 
-  const initMap = useCallback(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const L = (window as any).L;
-    if (!L || !containerRef.current || initRef.current) return;
-    
-    initRef.current = true;
-
-    // Clean up any previous map on this container
-    if (mapRef.current) {
-      try { mapRef.current.remove(); } catch { /* already removed */ }
-      mapRef.current = null;
-    }
-
-    const map = L.map(containerRef.current, {
-      zoomControl: true,
-      attributionControl: true,
-    }).setView([validCenter.lat, validCenter.lng], 15);
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
-      maxZoom: 19,
-    }).addTo(map);
-
-    // Generate scattered pins around center
-    const count = Math.max(1, pinCount);
-    const markers: unknown[] = [];
-    for (let i = 0; i < count; i++) {
-      const offsetLat = count > 1 ? (Math.random() - 0.5) * 0.004 : 0;
-      const offsetLng = count > 1 ? (Math.random() - 0.5) * 0.004 : 0;
-      const lat = validCenter.lat + offsetLat;
-      const lng = validCenter.lng + offsetLng;
-
-      const marker = L.marker([lat, lng]).addTo(map);
-      markers.push(marker);
-      if (count > 1) {
-        marker.bindPopup(`Report #${i + 1}`);
-      }
-    }
-
-    // Fit bounds if multiple pins
-    if (count > 1 && markers.length > 1) {
-      try {
-        const group = L.featureGroup(markers);
-        map.fitBounds(group.getBounds().pad(0.3));
-      } catch {
-        // bounds error fallback
-      }
-    }
-
-    mapRef.current = map;
-  }, [validCenter.lat, validCenter.lng, pinCount]);
-
+  // Effect 1 — instantiate map once
   useEffect(() => {
     if (!containerRef.current) return;
+    let cancelled = false;
 
-    // Load Leaflet CSS
-    if (!document.querySelector('link[href*="leaflet"]')) {
-      const link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-      document.head.appendChild(link);
-    }
+    loadMapLibre()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .then((maplibregl: any) => {
+        if (cancelled || !containerRef.current) return;
 
-    // Load Leaflet JS
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if ((window as any).L) {
-      initMap();
-    } else {
-      const existingScript = document.querySelector('script[src*="leaflet"]') as HTMLScriptElement;
-      if (existingScript) {
-        existingScript.addEventListener("load", initMap);
-      } else {
-        const script = document.createElement("script");
-        script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-        script.onload = initMap;
-        document.head.appendChild(script);
-      }
-    }
+        const firstPin = effectivePins[0];
+        const start = firstPin
+          ? [firstPin.lng, firstPin.lat]
+          : [AUSTIN_CENTER.lng, AUSTIN_CENTER.lat];
+
+        const map = new maplibregl.Map({
+          container: containerRef.current,
+          style: MAP_STYLE,
+          center: start,
+          zoom: effectivePins.length > 1 ? 11 : 13.5,
+          attributionControl: false,
+          cooperativeGestures: false,
+        });
+
+        map.addControl(
+          new maplibregl.NavigationControl({ showCompass: false }),
+          "top-right"
+        );
+        map.addControl(
+          new maplibregl.AttributionControl({
+            compact: true,
+            customAttribution:
+              '© <a href="https://carto.com/attributions">CARTO</a>',
+          }),
+          "bottom-right"
+        );
+
+        mapRef.current = map;
+      })
+      .catch(() => {
+        /* swallow — we'll show a fallback div */
+      });
 
     return () => {
+      cancelled = true;
       if (mapRef.current) {
-        try { mapRef.current.remove(); } catch { /* already removed */ }
+        try {
+          markersRef.current.forEach((m) => m.remove());
+          markersRef.current = [];
+          mapRef.current.remove();
+        } catch {
+          /* ignore */
+        }
         mapRef.current = null;
       }
-      initRef.current = false;
     };
-  }, [initMap]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Effect 2 — (re)build markers when pins change
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const apply = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const maplibregl = (window as any).maplibregl;
+      if (!maplibregl) return;
+
+      // Clear old markers
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current = [];
+
+      if (effectivePins.length === 0) return;
+
+      for (const pin of effectivePins) {
+        if (typeof pin.lat !== "number" || typeof pin.lng !== "number")
+          continue;
+        const color = severityColor(pin.severity);
+
+        const el = document.createElement("div");
+        el.className = "siren-pin";
+        el.style.cssText = `
+          position: relative;
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          background: ${color};
+          box-shadow:
+            0 0 0 4px ${color}33,
+            0 0 24px ${color}66,
+            0 4px 10px rgba(0,0,0,0.4);
+          cursor: ${onPinClick ? "pointer" : "default"};
+        `;
+        if (pin.active) {
+          const ring = document.createElement("span");
+          ring.style.cssText = `
+            position: absolute;
+            inset: -6px;
+            border-radius: 50%;
+            border: 2px solid ${color};
+            animation: siren-pulse-red 1.6s ease-out infinite;
+          `;
+          el.appendChild(ring);
+        }
+        const dot = document.createElement("span");
+        dot.style.cssText = `
+          position: absolute;
+          inset: 7px;
+          border-radius: 50%;
+          background: white;
+        `;
+        el.appendChild(dot);
+
+        if (onPinClick) {
+          el.addEventListener("click", (e) => {
+            e.stopPropagation();
+            onPinClick(pin);
+          });
+        }
+
+        const popup = pin.label
+          ? new maplibregl.Popup({
+              offset: 18,
+              closeButton: false,
+              className: "siren-popup",
+            }).setHTML(
+              `<div style="font-family:Inter,system-ui;font-size:12px;color:#e2e6f0;padding:4px 2px;">
+                 <div style="font-weight:700;margin-bottom:2px;">${pin.label}</div>
+                 ${
+                   pin.severity
+                     ? `<div style="font-size:10px;color:${color};font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Severity ${pin.severity}/10</div>`
+                     : ""
+                 }
+               </div>`
+            )
+          : undefined;
+
+        const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+          .setLngLat([pin.lng, pin.lat]);
+        if (popup) marker.setPopup(popup);
+        marker.addTo(map);
+        markersRef.current.push(marker);
+      }
+
+      // Fit bounds
+      if (effectivePins.length === 1) {
+        map.flyTo({
+          center: [effectivePins[0].lng, effectivePins[0].lat],
+          zoom: 14.5,
+          duration: 700,
+          essential: true,
+        });
+      } else if (effectivePins.length > 1) {
+        // If exactly one pin is marked active (e.g. user is hovering a feed
+        // card), focus that pin. Otherwise frame all pins.
+        const activePins = effectivePins.filter((p) => p.active);
+        if (activePins.length === 1) {
+          map.flyTo({
+            center: [activePins[0].lng, activePins[0].lat],
+            zoom: 14.5,
+            duration: 600,
+            essential: true,
+          });
+        } else {
+          const bounds = new maplibregl.LngLatBounds();
+          for (const p of effectivePins) bounds.extend([p.lng, p.lat]);
+          map.fitBounds(bounds, {
+            padding: 60,
+            maxZoom: 14,
+            duration: 700,
+            essential: true,
+          });
+        }
+      }
+    };
+
+    if (map.loaded()) apply();
+    else map.once("load", apply);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(effectivePins)]);
 
   return (
     <div
-      ref={containerRef}
-      className={`w-full h-full min-h-[200px] ${className}`}
-      style={{ zIndex: 0 }}
-    />
+      className={`relative w-full h-full min-h-[200px] ${className}`}
+      style={{ background: "#11141b" }}
+    >
+      <div ref={containerRef} className="w-full h-full" />
+      {/* Subtle inner shadow overlay for the ginkgo-style "inset" look */}
+      <div className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_0_80px_rgba(0,0,0,0.5)]" />
+    </div>
   );
 }

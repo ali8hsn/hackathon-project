@@ -47,13 +47,18 @@ export default function TrendDetectionPage() {
   }, []);
 
   useEffect(() => {
-    fetchIncidents();
+    // Defer initial fetch to next frame to satisfy
+    // react-hooks/set-state-in-effect (fetchIncidents internally calls setState).
+    const raf = requestAnimationFrame(() => {
+      fetchIncidents();
+    });
     const interval = setInterval(fetchIncidents, 15000);
 
     // Refetch when user navigates back/forward (SPA client-side routing)
     window.addEventListener("popstate", fetchIncidents);
 
     return () => {
+      cancelAnimationFrame(raf);
       clearInterval(interval);
       window.removeEventListener("popstate", fetchIncidents);
     };

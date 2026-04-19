@@ -15,6 +15,7 @@ export type IncidentRow = {
   confidence: number;
   caller_count: number;
   risk_index: string;
+  severity_score?: number;
   icon: string;
   raw_logs: unknown[];
   conflicts?: unknown[];
@@ -48,6 +49,8 @@ function docToRow(doc: IncidentDoc): IncidentRow {
     confidence: typeof doc.confidence === "number" ? doc.confidence : 0,
     caller_count: typeof doc.caller_count === "number" ? doc.caller_count : 0,
     risk_index: doc.risk_index ?? "",
+    severity_score:
+      typeof doc.severity_score === "number" ? doc.severity_score : undefined,
     icon: doc.icon ?? "emergency",
     raw_logs: (doc.raw_logs as unknown[]) ?? [],
     conflicts: doc.conflicts as unknown[],
@@ -76,6 +79,8 @@ export function transformDbToFrontend(row: IncidentRow | Record<string, unknown>
     elapsedTime: getElapsedTime(r.created_at),
     casualties: r.casualties,
     riskIndex: r.risk_index || "",
+    severityScore:
+      typeof r.severity_score === "number" ? r.severity_score : undefined,
     unitsAssigned: r.units_assigned ?? [],
     icon: r.icon || "emergency",
     confidenceScore: Math.round((r.confidence ?? 0) * 100),
@@ -160,6 +165,7 @@ export async function insertIncident(
     confidence: payload.confidence,
     caller_count: payload.caller_count,
     risk_index: payload.risk_index,
+    severity_score: payload.severity_score,
     icon: payload.icon,
     raw_logs: payload.raw_logs,
     conflicts: payload.conflicts,

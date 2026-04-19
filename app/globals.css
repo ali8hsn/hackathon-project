@@ -1,60 +1,99 @@
 @import "tailwindcss";
 
 @theme {
-  /* ── Siren — unified voice + dispatch console ── */
-  --color-brand: #e8281a;
-  --color-brand-dark: #b01f13;
-  --color-brand-dim: rgba(232, 40, 26, 0.14);
+  /* ── Siren AI — Harmonic-inspired palette ─────────────────────────────
+     Hero = cream. Scroll-transition = violet. Console = deep ink.
+     Severity = heat-map reserved for data only. */
 
-  /* ── Surfaces (aligned with /intake dark shell) ── */
-  --color-bg: #0a0a0b;
-  --color-surface-lowest: #0a0a0b;
-  --color-surface-low: #181c22;
-  --color-surface: #1c2026;
-  --color-surface-high: #262a31;
-  --color-surface-highest: #31353c;
-  --color-surface-bright: #353940;
+  /* Cream (hero / light) */
+  --color-cream: #faf7f2;
+  --color-cream-dim: #f0ece4;
+  --color-cream-line: rgba(10, 10, 15, 0.08);
 
-  /* Accent: cool slate for UI chrome; brand red for Siren emphasis */
-  --color-primary: #94a3b8;
-  --color-primary-container: rgba(232, 40, 26, 0.12);
-  --color-on-primary: #ffffff;
-  --color-on-primary-container: #fecaca;
-  --color-primary-dim: #e8281a;
+  /* Ink (dashboard / dark) */
+  --color-ink: #0a0a0f;
+  --color-ink-soft: #14141d;
+  --color-ink-line: rgba(255, 255, 255, 0.06);
 
-  --color-secondary: #ffb3b1;
-  --color-secondary-container: #ad0224;
-  --color-on-secondary: #680011;
-  --color-on-secondary-container: #ffb8b5;
+  /* Violet accent (scroll bleed + AI) */
+  --color-violet-50: #f5f3ff;
+  --color-violet-200: #ddd6fe;
+  --color-violet-400: #a78bfa;
+  --color-violet-500: #8b5cf6;
+  --color-violet-600: #7c3aed;
+  --color-violet-700: #6d28d9;
+  --color-violet-900: #2e1065;
 
-  --color-tertiary: #ffb780;
-  --color-tertiary-container: #3f1d00;
-  --color-on-tertiary: #4e2600;
-  --color-on-tertiary-container: #c67c3e;
+  /* AI accent alias */
+  --color-ai: #a78bfa;
+  --color-ai-dim: rgba(167, 139, 250, 0.14);
 
-  --color-error: #ffb4ab;
-  --color-error-container: #93000a;
-  --color-on-error: #690005;
-  --color-on-error-container: #ffdad6;
+  /* Severity heat-map */
+  --color-sev-1: #2dd4bf;
+  --color-sev-2: #4ade80;
+  --color-sev-3: #a3e635;
+  --color-sev-4: #facc15;
+  --color-sev-5: #fb923c;
+  --color-sev-6: #f97316;
+  --color-sev-7: #ef4444;
+  --color-sev-8: #dc2626;
+  --color-sev-9: #b91c1c;
+  --color-sev-10: #7f1d1d;
 
-  --color-on-surface: #dfe2eb;
-  --color-on-surface-variant: #c5c6cd;
-  --color-outline: #8f9097;
-  --color-outline-variant: #45474d;
-  --color-inverse-surface: #dfe2eb;
+  /* Surfaces (dashboard section) */
+  --color-bg: #0a0a0f;
+  --color-surface-lowest: #0a0a0f;
+  --color-surface-low: #12121b;
+  --color-surface: #181822;
+  --color-surface-high: #23232f;
+  --color-surface-highest: #30303c;
+  --color-surface-bright: #3a3a48;
 
-  /* ── Typography ── */
+  /* Brand — red reserved purely for high-severity signal */
+  --color-brand: #ff3a3a;
+  --color-brand-dark: #c22525;
+  --color-brand-dim: rgba(255, 58, 58, 0.12);
+
+  /* Semantic (consumed by old pages — keep stable) */
+  --color-primary: #a78bfa;
+  --color-primary-container: rgba(167, 139, 250, 0.12);
+  --color-on-primary: #0a0a0f;
+  --color-on-primary-container: #ede9fe;
+  --color-primary-dim: #a78bfa;
+
+  --color-secondary: #c7d2fe;
+  --color-secondary-container: #1e1b4b;
+  --color-on-secondary: #0a0a0f;
+  --color-on-secondary-container: #c7d2fe;
+
+  --color-tertiary: #fbbf24;
+  --color-tertiary-container: rgba(251, 191, 36, 0.14);
+  --color-on-tertiary: #1a1200;
+  --color-on-tertiary-container: #fde68a;
+
+  --color-error: #ff3a3a;
+  --color-error-container: rgba(255, 58, 58, 0.14);
+  --color-on-error: #ffffff;
+  --color-on-error-container: #fecaca;
+
+  --color-on-surface: #e8e6ef;
+  --color-on-surface-variant: #9aa3b8;
+  --color-outline: #64748b;
+  --color-outline-variant: #2a2a38;
+  --color-inverse-surface: #e8e6ef;
+
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Inter", ui-monospace, monospace;
+  --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
-/* ── Base Styles ── */
+/* ── Base ─────────────────────────────────────────────────────────────── */
 html {
   color-scheme: dark;
 }
 
 body {
-  background-color: var(--color-bg);
+  background: var(--color-bg);
   color: var(--color-on-surface);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -62,37 +101,73 @@ body {
 }
 
 ::selection {
-  background-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
-  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-ai) 35%, transparent);
+  color: var(--color-ai);
 }
 
-/* ── Scrollbar ── */
+/* Scrollbar */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 8px;
+  height: 8px;
 }
-
 ::-webkit-scrollbar-track {
-  background: var(--color-surface-lowest);
+  background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: var(--color-surface-highest);
+  background: rgba(148, 163, 184, 0.25);
   border-radius: 10px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-outline-variant);
+  background: rgba(148, 163, 184, 0.45);
 }
 
-/* ── Utility Classes ── */
-.glass-panel {
-  background: rgba(49, 53, 60, 0.8);
-  backdrop-filter: blur(20px);
+/* ── Utilities ────────────────────────────────────────────────────────── */
+.font-display {
+  font-family: var(--font-serif);
+  letter-spacing: -0.02em;
+  font-weight: 400;
 }
 
-/* Material Symbols */
 .material-symbols-outlined {
   font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
   vertical-align: middle;
+}
+
+/* ── Animations ───────────────────────────────────────────────────────── */
+@keyframes siren-reveal {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes siren-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes siren-pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(167, 139, 250, 0.4); }
+  70%  { box-shadow: 0 0 0 12px rgba(167, 139, 250, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(167, 139, 250, 0); }
+}
+@keyframes siren-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+@keyframes siren-shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.reveal {
+  opacity: 0;
+}
+.reveal.in-view {
+  animation: siren-reveal 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── Print (for /reports PDF export) ──────────────────────────────────── */
+@media print {
+  .print\:hidden { display: none !important; }
+  body {
+    background: white;
+    color: black;
+  }
 }
