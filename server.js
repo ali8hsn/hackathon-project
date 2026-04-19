@@ -1133,9 +1133,11 @@ nextApp.prepare().then(() => {
         pathname === '/dispatch-live.html' ||
         pathname === '/dispatch-live.html/'
       ) {
-        const htmlPath = path.join(__dirname, 'public', 'dispatch-live.html');
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return fs.createReadStream(htmlPath).pipe(res);
+        // Legacy iframe view replaced by the Next /phone-calls monitor.
+        // Redirect at the Express layer because this handler runs before
+        // the Next request handler, so the in-app `redirect()` never fires.
+        res.writeHead(308, { Location: '/phone-calls' });
+        return res.end();
       }
 
       if (pathname.startsWith('/api/aria')) {
