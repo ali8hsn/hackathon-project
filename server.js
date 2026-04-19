@@ -91,6 +91,71 @@ function broadcast(data) {
   });
 }
 
+// ─── Phase 9 — Server-side mass-event clusters ─────────────────────────────
+// Promotes the Pass-1 client-side popup into an authoritative server cluster.
+// On every ticket update we rebucket active sessions by `${type}|${locSig}`.
+// Buckets >= MASS_EVENT_THRESHOLD callers are broadcast as `cluster_update`.
+// The dashboard (useLiveClusters hook) renders one card per cluster with a
+// "Merge into one incident" button that hits POST /api/incidents/merge-cluster.
+const MASS_EVENT_THRESHOLD = 2; // demo-friendly: 2 callers triggers a cluster
+const CLUSTER_TTL_MS = 180_000;
+
+function locationSignature(loc) {
+  if (!loc) return '';
+  return String(loc)
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .slice(0, 3)
+    .join(' ');
+}
+
+function clusterKeyFromTicket(t) {
+  if (!t) return null;
+  const type = (t.type || '').toLowerCase().trim();
+  const locSig = locationSignature(t.location);
+  if (!type || !locSig) return null;
+  return `${type}|${locSig}`;
+}
+
+function snapshotClusters() {
+  const now = Date.now();
+  const buckets = new Map();
+  for (const [sid, sess] of Object.entries(sessions)) {
+    if (!sess || !sess.callActive) continue;
+    if (sess.mergedInto) continue; // Skip sessions that were merged.
+    const lastSeen = sess.lastSeen || sess.startedAt || now;
+    if (now - lastSeen > CLUSTER_TTL_MS) continue;
+    const key = clusterKeyFromTicket(sess.ticket);
+    if (!key) continue;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = {
+        key,
+        type: sess.ticket.type || 'Unknown',
+        location: sess.ticket.location || 'Unknown',
+        sessionIds: [],
+      };
+      buckets.set(key, bucket);
+    }
+    bucket.sessionIds.push(sid);
+  }
+  return [...buckets.values()]
+    .filter(b => b.sessionIds.length >= MASS_EVENT_THRESHOLD)
+    .map(b => ({ ...b, callerCount: b.sessionIds.length }));
+}
+
+let lastClusterSnapshotJson = '[]';
+function recomputeClustersAndBroadcast() {
+  const snapshot = snapshotClusters();
+  const json = JSON.stringify(snapshot);
+  if (json === lastClusterSnapshotJson) return;
+  lastClusterSnapshotJson = json;
+  broadcast({ type: 'cluster_update', clusters: snapshot });
+}
+
 function checkWhisper() {
   try {
     execSync('which whisper', { stdio: 'pipe' });
@@ -206,6 +271,90 @@ ariaApp.get('/status', (req, res) => {
     aiActive,
     activeSessions: Object.keys(sessions).filter(k => sessions[k].callActive).length
   });
+});
+
+/**
+ * Read-only snapshot of currently-active mass-event clusters. The dashboard
+ * polls this on first paint as a fallback in case the WebSocket hasn't
+ * delivered a `cluster_update` yet.
+ */
+ariaApp.get('/clusters', (_req, res) => {
+  res.json({ clusters: snapshotClusters() });
+});
+
+/**
+ * Merge a server-side cluster into a single new incident. Body:
+ * `{ clusterKey: string, sessionIds: string[] }`. We:
+ *  1. Concatenate all transcripts from the listed sessions
+ *  2. Forward to /api/incidents (Next route → Mongo) as one merged transcript
+ *  3. Mark each session.mergedInto = <newIncidentId> so they drop from the
+ *     cluster snapshot and the live-caller pane shows them as merged
+ *  4. Broadcast `cluster_merged` so all connected dashboards collapse the
+ *     card simultaneously.
+ */
+ariaApp.post('/clusters/merge', async (req, res) => {
+  const { clusterKey, sessionIds } = req.body || {};
+  if (!clusterKey || !Array.isArray(sessionIds) || sessionIds.length === 0) {
+    return res.status(400).json({ error: 'clusterKey and sessionIds[] required' });
+  }
+
+  const merged = sessionIds
+    .map(sid => sessions[sid])
+    .filter(Boolean);
+  if (merged.length === 0) {
+    return res.status(404).json({ error: 'No matching active sessions' });
+  }
+
+  const sample = merged[0];
+  const locationHint = sample.ticket.location || undefined;
+  const transcriptText = merged
+    .map((s, i) => {
+      const lines = (s.transcript || [])
+        .map(t => `[${t.role || 'caller'}] ${t.translatedText || t.text || ''}`)
+        .join('\n');
+      return `--- Caller ${i + 1} (${s.ticket.callerName || 'unknown'}) ---\n${lines}`;
+    })
+    .join('\n\n');
+
+  try {
+    // Reach the Next.js incidents API in the same process via localhost so
+    // we go through the standard ingest pipeline (Mongo write + AI scoring).
+    const port = process.env.PORT || 3000;
+    const ingestRes = await fetch(`http://127.0.0.1:${port}/api/incidents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transcript: transcriptText,
+        caller_id: `cluster-${clusterKey}`,
+        location_hint: locationHint,
+      }),
+    });
+    if (!ingestRes.ok) {
+      const txt = await ingestRes.text();
+      return res.status(502).json({ error: `Ingest failed: ${txt}` });
+    }
+    const ingest = await ingestRes.json();
+    const newIncidentId = ingest?.incident?.id || ingest?.id || null;
+
+    // Mark sessions as merged so they drop from future cluster snapshots.
+    for (const sid of sessionIds) {
+      if (sessions[sid]) {
+        sessions[sid].mergedInto = newIncidentId;
+      }
+    }
+    broadcast({
+      type: 'cluster_merged',
+      clusterKey,
+      sessionIds,
+      newIncidentId,
+    });
+    recomputeClustersAndBroadcast();
+
+    return res.json({ ok: true, incidentId: newIncidentId, mergedSessions: sessionIds.length });
+  } catch (err) {
+    console.error('[CLUSTER MERGE]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 /**
@@ -618,6 +767,10 @@ All scores are 0-100. timelineStep is 0-4 (0=call received, 1=location found, 2=
         session.ticket[key] = updates[key];
       }
     });
+    session.lastSeen = Date.now();
+    // Recompute clusters after every ticket update — that's exactly when a
+    // new caller's `type` + `location` first becomes known to the server.
+    recomputeClustersAndBroadcast();
 
     if (parsed.ariaResponse) {
       session.transcript.push({
@@ -755,6 +908,7 @@ Be precise and professional. This will be used by dispatchers and first responde
     session.endTime = new Date().toISOString();
 
     broadcast({ type: 'report_ready', sessionId, report });
+    recomputeClustersAndBroadcast();
     res.json({ report, sessionId, incidentId: session.ticket.incidentId });
 
   } catch (err) {
@@ -779,6 +933,7 @@ ariaApp.post('/session/end', (req, res) => {
     }
     session.callActive = false;
     broadcast({ type: 'session_end', sessionId });
+    recomputeClustersAndBroadcast();
     console.log(`[SESSION] Ended: ${sessionId}`);
   }
   res.json({ ok: true });
@@ -939,6 +1094,7 @@ ariaApp.post('/twilio/call-status', (req, res) => {
         channel: 'phone',
         twilioCallSid: callSid
       });
+      recomputeClustersAndBroadcast();
       delete twilioCallSidToSessionId[callSid];
       console.log(`[TWILIO] Call ended ${callSid}`);
     }
@@ -989,6 +1145,12 @@ nextApp.prepare().then(() => {
   wss.on('connection', (ws) => {
     console.log('[WS] Client connected');
     ws.send(JSON.stringify({ type: 'connected', message: 'Siren system online' }));
+    // Hydrate brand-new dashboards with the current cluster snapshot so
+    // they don't have to wait for the next ticket update.
+    const initialClusters = snapshotClusters();
+    if (initialClusters.length > 0) {
+      ws.send(JSON.stringify({ type: 'cluster_update', clusters: initialClusters }));
+    }
     ws.on('close', () => console.log('[WS] Client disconnected'));
   });
 

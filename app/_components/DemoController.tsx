@@ -2,20 +2,25 @@
 
 // ─── DemoController ─────────────────────────────────────────────────────────
 // Narrated walkthrough of Siren's core features, synchronized with a simulated
-// 911 call (burning-building MP3). Emits a `LiveCaller` state that the homepage
-// can render into the LiveCallerQueue so viewers can watch fields populate in
-// real time as the call progresses.
+// 911 call (burning-building MP3). Pass 2 upgrade: each step can carry a
+// `route` so the demo physically traverses the site (homepage → situation
+// sheet → dispatch-live → intake) instead of sitting on one page. Emits a
+// `LiveCaller` state that the homepage can render into LiveCallerQueue so
+// viewers can watch fields populate in real time as the call progresses.
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import type { LiveCaller } from "./LiveCallerQueue";
 
-// ─── Demo script ─── timings (seconds from audio start) are approximate
-// for a ~45s burning-building call. Adjust when the real MP3 lands.
+// `route` is interpolated client-side: any "{demoId}" token gets replaced with
+// the most-recent HIGH-priority incident id we resolve at demo start. That
+// keeps the demo robust as new incidents arrive — no hard-coded id rot.
 export const DEMO_STEPS: {
   atSec: number;
   title: string;
   body: string;
   caller?: Partial<LiveCaller>;
+  route?: string;
   spotlight?:
     | "queue"
     | "report"
@@ -30,6 +35,7 @@ export const DEMO_STEPS: {
     title: "Incoming 911 call",
     body: "Caller connects. Siren auto-transcribes in the background and begins building a ticket before a dispatcher picks up.",
     spotlight: "queue",
+    route: "/",
     caller: {
       status: "ringing",
       phone: "+1 512 ••• 0471",
@@ -41,6 +47,7 @@ export const DEMO_STEPS: {
     title: "AI intake engages",
     body: "While the caller is on hold, Siren's AI agent asks calming, structured questions and streams answers into the ticket.",
     spotlight: "queue",
+    route: "/",
     caller: {
       status: "triaging",
       nature: "Structure fire — residential",
@@ -52,6 +59,7 @@ export const DEMO_STEPS: {
     title: "Location extracted",
     body: "Claude pulls the address out of the caller's speech — no dispatcher typing needed.",
     spotlight: "queue",
+    route: "/",
     caller: {
       status: "triaging",
       nature: "Structure fire — residential",
@@ -64,6 +72,7 @@ export const DEMO_STEPS: {
     title: "Victims and hazards flagged",
     body: "Number of people trapped and environmental hazards are detected and surfaced before the call is even transferred.",
     spotlight: "queue",
+    route: "/",
     caller: {
       status: "triaging",
       nature: "Structure fire — residential, person trapped",
@@ -76,9 +85,10 @@ export const DEMO_STEPS: {
   },
   {
     atSec: 28,
-    title: "Ticket ready for dispatch",
-    body: "A complete situation sheet is ready in under 30 seconds — severity, location, priority, units.",
+    title: "Ticket ready for dispatch — opening situation sheet",
+    body: "A complete situation sheet is ready in under 30 seconds. We're routing you to the AI-generated report now.",
     spotlight: "report",
+    route: "/situation-sheet/{demoId}",
     caller: {
       status: "ready",
       nature: "Structure fire — person trapped, 2nd floor",
@@ -91,15 +101,17 @@ export const DEMO_STEPS: {
   },
   {
     atSec: 35,
-    title: "Dispatcher view",
-    body: "Click any card to open the Situation Sheet — AI-generated report, live transcripts, and conflict detection across multiple callers.",
+    title: "Dispatcher view — beyond the call",
+    body: "Live dispatch view shows every active incident on the map with severity-sorted units in motion.",
     spotlight: "report",
+    route: "/dispatch-live",
   },
   {
     atSec: 42,
-    title: "Beyond the call",
-    body: "AI Assist triages priority, Trend Detection spots incident clusters, and every caller-on-hold is being captured.",
-    spotlight: "haashir",
+    title: "Voice intake — where the calls land",
+    body: "ARIA answers callers in their language, transcribes in real time, and feeds Siren the structured ticket you just saw.",
+    spotlight: "intake",
+    route: "/intake/",
   },
 ];
 
@@ -118,10 +130,33 @@ export default function DemoController({
   onCallerUpdate,
   onStepChange,
 }: Props) {
+  const router = useRouter();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [audioTime, setAudioTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioMissing, setAudioMissing] = useState(false);
+  const [demoIncidentId, setDemoIncidentId] = useState<string | null>(null);
+  // Track the last route we pushed so we don't spam router.push on every
+  // audio time-update tick — only navigate when the step actually changes.
+  const lastRouteRef = useRef<string | null>(null);
+
+  // Resolve the demo's situation-sheet target on open. Pick the most-recent
+  // HIGH incident; fall back to anything we can find.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetch("/api/incidents")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: Array<{ id: string; priority?: string }>) => {
+        if (cancelled || !Array.isArray(rows) || rows.length === 0) return;
+        const high = rows.find((r) => r.priority === "HIGH");
+        setDemoIncidentId((high ?? rows[0]).id);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   // Derive the current step from audioTime (pure computation — no state).
   const currentStepIdx = useMemo(() => {
@@ -133,7 +168,7 @@ export default function DemoController({
     return idx;
   }, [audioTime]);
 
-  // Emit caller state whenever step changes
+  // Emit caller state + push routes whenever the step index changes.
   useEffect(() => {
     if (!open) {
       onCallerUpdate?.(null);
@@ -149,8 +184,28 @@ export default function DemoController({
       Object.assign(merged, DEMO_STEPS[i].caller ?? {});
     }
     onCallerUpdate?.(merged);
-    onStepChange?.(DEMO_STEPS[currentStepIdx]?.spotlight);
-  }, [currentStepIdx, open, onCallerUpdate, onStepChange, audioTime]);
+    const step = DEMO_STEPS[currentStepIdx];
+    onStepChange?.(step?.spotlight);
+
+    // Route navigation — only on actual step boundary.
+    if (step?.route) {
+      const resolved = step.route.replace(
+        "{demoId}",
+        demoIncidentId ?? ""
+      );
+      // If the demoId hasn't loaded yet, skip the situation-sheet hop and
+      // stay on whatever page we're on rather than navigating to /situation-sheet/.
+      const safe =
+        resolved.includes("/situation-sheet/") && !demoIncidentId
+          ? null
+          : resolved;
+      if (safe && safe !== lastRouteRef.current) {
+        lastRouteRef.current = safe;
+        router.push(safe);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStepIdx, open, demoIncidentId]);
 
   const handleTime = useCallback(() => {
     if (audioRef.current) setAudioTime(audioRef.current.currentTime);
@@ -182,8 +237,12 @@ export default function DemoController({
     if (audioRef.current) audioRef.current.currentTime = 0;
     setAudioTime(0);
     setIsPlaying(false);
+    lastRouteRef.current = null;
     onClose();
-  }, [onClose]);
+    // Bring the dispatcher back home so the demo always finishes on the
+    // hero rather than orphaned on /intake or /dispatch-live.
+    router.push("/");
+  }, [onClose, router]);
 
   // Auto-play on open (may be blocked until user interacts)
   useEffect(() => {

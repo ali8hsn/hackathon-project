@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import Sidebar from "./_components/Sidebar";
 import TopNav from "./_components/TopNav";
+import DemoHost from "./_components/DemoHost";
 import { AppProvider } from "./_lib/store";
 
 const inter = Inter({
@@ -48,11 +49,13 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex overflow-hidden bg-bg text-on-surface font-sans">
         <AppProvider>
-          <Sidebar />
-          <div className="ml-64 flex-1 flex flex-col h-screen overflow-hidden relative z-10">
-            <TopNav />
-            <main className="flex-1 overflow-hidden">{children}</main>
-          </div>
+          <DemoHost>
+            <Sidebar />
+            <div className="ml-64 flex-1 flex flex-col h-screen overflow-hidden relative z-10">
+              <TopNav />
+              <main className="flex-1 overflow-hidden">{children}</main>
+            </div>
+          </DemoHost>
         </AppProvider>
       </body>
     </html>

@@ -20,12 +20,14 @@ import {
 import Link from "next/link";
 import type { Incident } from "./_lib/types";
 import MapView, { type MapPin } from "./_components/MapView";
-import DemoController from "./_components/DemoController";
 import LiveCallerQueue, {
   type LiveCaller,
 } from "./_components/LiveCallerQueue";
 import { useLivePhoneCallers } from "./_components/useLivePhoneCallers";
 import { useHighPriorityChime } from "./_components/useHighPriorityChime";
+import { useDemo } from "./_components/DemoHost";
+import { useLiveClusters } from "./_components/useLiveClusters";
+import ClusterCards from "./_components/ClusterCards";
 
 // ─── Severity model ───────────────────────────────────────────────────────
 // Prefer the AI-detected severity stored on the incident (Gemini scorer in
@@ -126,11 +128,10 @@ function useReveal<T extends HTMLElement>() {
 export default function HomePage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [isLive, setIsLive] = useState(false);
-  const [demoOpen, setDemoOpen] = useState(false);
-  const [, setDemoCaller] = useState<LiveCaller | null>(null);
-  const [, setDemoSpotlight] = useState<string | undefined>(undefined);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const { callers: liveCallers, pins: livePins } = useLivePhoneCallers();
+  const { clusters, mergeCluster } = useLiveClusters();
+  const demo = useDemo();
 
   useEffect(() => {
     async function fetchIncidents() {
@@ -213,12 +214,6 @@ export default function HomePage() {
   const highCount = incidents.filter((i) => i.priority === "HIGH").length;
   const medCount = incidents.filter((i) => i.priority === "MEDIUM").length;
   const lowCount = incidents.filter((i) => i.priority === "LOW").length;
-
-  const handleDemoClose = useCallback(() => {
-    setDemoOpen(false);
-    setDemoCaller(null);
-    setDemoSpotlight(undefined);
-  }, []);
 
   const handlePinClick = useCallback((pin: MapPin) => {
     const el = document.getElementById(`incident-${pin.id}`);
@@ -315,7 +310,7 @@ export default function HomePage() {
 
           <div className="mt-10 flex items-center justify-center gap-3 flex-wrap">
             <button
-              onClick={() => setDemoOpen(true)}
+              onClick={() => demo.openDemo()}
               className="group relative flex items-center gap-2 pl-5 pr-6 py-3 rounded-full transition-all overflow-hidden"
               style={{
                 background: "#0a0a0f",
@@ -440,6 +435,14 @@ export default function HomePage() {
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_520px] gap-6 items-start">
             {/* FEED */}
             <div>
+              {clusters.length > 0 && (
+                <div className="mb-6">
+                  <ClusterCards
+                    clusters={clusters}
+                    onMerge={mergeCluster}
+                  />
+                </div>
+              )}
               {liveCallers.length > 0 && (
                 <div className="mb-6">
                   <LiveCallerQueue
@@ -476,7 +479,7 @@ export default function HomePage() {
               </div>
 
               {sorted.length === 0 ? (
-                <EmptyFeed onPlayDemo={() => setDemoOpen(true)} />
+                <EmptyFeed onPlayDemo={() => demo.openDemo()} />
               ) : (
                 <ul className="space-y-3">
                   {sorted.map(({ incident, score }, idx) => (
@@ -573,13 +576,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Demo overlay */}
-      <DemoController
-        open={demoOpen}
-        onClose={handleDemoClose}
-        onCallerUpdate={setDemoCaller}
-        onStepChange={setDemoSpotlight}
-      />
+      {/* Demo overlay is mounted at layout level via <DemoHost /> so it
+          survives client-side navigations triggered by the demo itself. */}
     </div>
   );
 }
