@@ -9,7 +9,7 @@
 # Required env (or .env beside the project root):
 #   TWILIO_ACCOUNT_SID
 #   TWILIO_AUTH_TOKEN
-#   PUBLIC_BASE_URL    e.g. https://3-225-183-122.sslip.io
+#   PUBLIC_BASE_URL    e.g. https://siren.ink
 #
 # Examples:
 #   ./scripts/setup-twilio.sh
@@ -28,7 +28,7 @@ fi
 
 if [ -z "$PUBLIC_BASE_URL" ]; then
   echo "✖ PUBLIC_BASE_URL is not set."
-  echo "  export PUBLIC_BASE_URL=https://3-225-183-122.sslip.io"
+  echo "  export PUBLIC_BASE_URL=https://siren.ink"
   echo "  (or add it to .env), then re-run."
   exit 1
 fi

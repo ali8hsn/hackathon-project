@@ -1,7 +1,7 @@
 # Siren — Deploy Notes
 
 **Deployed:** Sunday April 19, 2026 (MLH Hackathon demo day)  
-**Live URL:** https://3-225-183-122.sslip.io  
+**Live URL:** https://siren.ink  
 **Status:** ✅ Running
 
 ---
@@ -23,7 +23,7 @@
 
 ## Domain
 
-- **DNS:** `3-225-183-122.sslip.io` via [sslip.io](https://sslip.io) — free wildcard DNS, no purchase needed
+- **DNS:** `siren.ink` via GoDaddy
 - **TLS:** Let's Encrypt certificate (expires 2026-07-18, auto-renews via certbot systemd timer)
 - **HTTP → HTTPS redirect:** enabled
 
@@ -35,8 +35,8 @@
 | **Process manager** | PM2 (process name: `siren`) |
 | **Process user** | `siren` (system user, no login shell) |
 | **Port** | `3000` (internal, proxied by Nginx) |
-| **WebSocket path** | `wss://3-225-183-122.sslip.io/ws-aria` |
-| **Voice intake** | `https://3-225-183-122.sslip.io/intake` |
+| **WebSocket path** | `wss://siren.ink/ws-aria` |
+| **Voice intake** | `https://siren.ink/intake` |
 | **PM2 startup** | `pm2-siren.service` (systemd) |
 
 ## Secrets
@@ -73,17 +73,17 @@ Permissions: `root:siren` / mode `640`. Symlinked to `/opt/siren/app/.env`.
 
 | Test | Result |
 |---|---|
-| `GET https://3-225-183-122.sslip.io` | ✅ HTTP 200 |
-| `GET https://3-225-183-122.sslip.io/api/incidents` | ✅ JSON array of incidents |
-| `GET http://3-225-183-122.sslip.io` | ✅ HTTP 301 → HTTPS |
-| WebSocket `wss://3-225-183-122.sslip.io/ws-aria` | ✅ Connected (PM2 log confirmed) |
+| `GET https://siren.ink` | ✅ HTTP 200 |
+| `GET https://siren.ink/api/incidents` | ✅ JSON array of incidents |
+| `GET http://siren.ink` | ✅ HTTP 301 → HTTPS |
+| WebSocket `wss://siren.ink/ws-aria` | ✅ Connected (PM2 log confirmed) |
 
 ## Still Manual
 
 1. **Twilio webhooks** — `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` are empty. To enable phone intake:
    - Add keys to `/etc/siren/siren.env` on the instance
-   - Set Twilio voice webhook URL to `https://3-225-183-122.sslip.io/api/twilio/voice`
-   - Set Twilio status callback to `https://3-225-183-122.sslip.io/api/twilio/status`
+   - Set Twilio voice webhook URL to `https://siren.ink/api/twilio/voice`
+   - Set Twilio status callback to `https://siren.ink/api/twilio/status`
    - Restart: `pm2 restart siren`
 
 2. **MongoDB Atlas IP whitelist** — EC2 Elastic IP `3.225.183.122` must be in Atlas → Network Access allowlist. (Already working at deploy time — incidents API returns data.)

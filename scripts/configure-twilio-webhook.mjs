@@ -5,7 +5,7 @@
 // Required env (read from process.env or .env beside this script):
 //   TWILIO_ACCOUNT_SID
 //   TWILIO_AUTH_TOKEN
-//   PUBLIC_BASE_URL          e.g. https://3-225-183-122.sslip.io
+//   PUBLIC_BASE_URL          e.g. https://siren.ink
 //
 // Optional:
 //   TWILIO_PHONE_NUMBER_SID  — if set, only update that single number
@@ -51,7 +51,7 @@ if (!sid || !token) {
   process.exit(1);
 }
 if (!base) {
-  console.error('✖ Missing PUBLIC_BASE_URL (e.g. https://3-225-183-122.sslip.io).');
+  console.error('✖ Missing PUBLIC_BASE_URL (e.g. https://siren.ink).');
   process.exit(1);
 }
 

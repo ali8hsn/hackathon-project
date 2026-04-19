@@ -2,14 +2,14 @@
 
 - Project rebrand: replace every "Sentinel" reference (code, identifiers, routes, branding, comments, docs) with "Siren" / "Haashir" as appropriate.
 - Prefer terse, scannable answers (tables, bullets, short summaries) over long prose.
-- Prefer free / no-cost solutions when feasible (e.g. user declined to buy a domain; use sslip.io against the EC2 Elastic IP for free HTTPS).
+- Prefer free / no-cost solutions when feasible.
 - For non-trivial work, present a plan first (with todos), then implement; mark todos in_progress as you go and don't stop until all are complete.
 - When asking the user for input, batch related questions and offer concrete option choices instead of open-ended prompts.
 - User frequently pastes raw secrets (Anthropic / Mongo URI / Twilio / AWS session creds / ElevenLabs) into chat — never write those values into committed files; keep them only in `/etc/siren/siren.env` on the server and use placeholders in `.env.example` and docs.
 
 ## Learned Workspace Facts
 
-- Project name is "Siren" — operator-facing 911 dispatch console for callers on hold; live at `https://3-225-183-122.sslip.io`.
+- Project name is "Siren" — operator-facing 911 dispatch console for callers on hold; live at `https://siren.ink`.
 - Production: AWS EC2 (Ubuntu 22.04, t3.small, us-east-1a, Elastic IP `3.225.183.122`); Nginx → Node 20 + PM2 on port 3000; Let's Encrypt TLS. App at `/opt/siren/app` (owner `siren`); env at `/etc/siren/siren.env` (mode 640, `root:siren`) symlinked to `app/.env`; SSH as `ubuntu` with `~/.ssh/siren-deploy.pem`.
 - MongoDB Atlas database name is `siren` (renamed from legacy `sentinel` in commit b624ddc — full rebrand). Connection details live in `/etc/siren/siren.env` via `MONGODB_URI` + `MONGODB_DB_NAME=siren`.
 - AI providers: Anthropic Claude for classification + report generation (`app/_lib/haashir-ai.ts`); Gemini `gemini-2.5-flash-lite` for 1–10 severity scoring (`app/_lib/gemini-severity.ts`, persisted as `severity_score`, ratchet-up only on UPDATE); ElevenLabs for TTS on `/intake`.

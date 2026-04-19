@@ -38,7 +38,7 @@ SIREN_APP_DIR="${SIREN_APP_DIR:-/opt/siren/app}"
 SIREN_APP_USER="${SIREN_APP_USER:-siren}"
 SIREN_PM2_NAME="${SIREN_PM2_NAME:-siren}"
 SIREN_SKIP_PUSH="${SIREN_SKIP_PUSH:-0}"
-SIREN_HEALTH_URL="${SIREN_HEALTH_URL:-https://3-225-183-122.sslip.io/api/incidents}"
+SIREN_HEALTH_URL="${SIREN_HEALTH_URL:-https://siren.ink/api/incidents}"
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
@@ -273,5 +273,5 @@ fi
 
 echo
 green "── Redeploy complete ───────────────────────────────────────────"
-echo "  Live: https://3-225-183-122.sslip.io"
+echo "  Live: https://siren.ink"
 echo "  Logs: ssh -i $SIREN_SSH_KEY $SIREN_SSH_USER@$SIREN_HOST 'sudo -u $SIREN_APP_USER pm2 logs $SIREN_PM2_NAME --lines 80'"

@@ -34,9 +34,7 @@ HTTPS, and hand me back a live URL **before the MLH demo today**.
 
 - **Hosting model:** single AWS EC2 `t3.small` in `us-east-1`, Ubuntu 22.04 LTS.
   Node 20 + Nginx + PM2 + Certbot. No Amplify. No ECS. No load balancer.
-- **Domain:** register `siren.<tld>` on GoDaddy using promo code `MLHEM26`.
-  Try TLDs in this order, pick the first available + reasonably priced:
-  `.help` → `.ai` → `.live` → `.dev` → `.com` → `.io`.
+- **Domain:** use `siren.ink` (already purchased).
 - **WebSockets must work.** The homepage and intake both rely on WSS.
   Nginx config MUST set `Upgrade` / `Connection: upgrade` and
   `proxy_read_timeout 3600s`.
@@ -82,16 +80,7 @@ answer. **Do not** try to buy the domain yourself.
 
 ### 2. Give Ali GoDaddy purchase instructions
 
-Once he picks a TLD, print these instructions verbatim and wait for him to
-confirm he's done:
-
-> 1. Go to https://www.godaddy.com/domainsearch/find?domainToCheck=siren.<TLD>
-> 2. Add `siren.<TLD>` to cart. **Skip** every upsell (privacy, email,
->    hosting) — we'll use Cloudflare/AWS for DNS.
-> 3. At checkout, paste promo code **`MLHEM26`**.
-> 4. Complete purchase.
-> 5. In **My Products → DNS**, delete the default parked A-records. Leave
->    the domain there; we'll add records once EC2 is up.
+The domain `siren.ink` is already registered. Ali will set up the DNS records.
 
 ### 3. AWS: provision EC2
 
@@ -168,7 +157,7 @@ Print `$PUBLIC_IP` for Ali and hand off to step 4.
 
 Give Ali this instruction:
 
-> Go to **GoDaddy → My Products → siren.\<TLD> → DNS**. Add two records and
+> Go to **GoDaddy → My Products → siren.ink → DNS**. Add two records and
 > remove anything else:
 >
 > | Type | Host | Value        | TTL   |
@@ -177,7 +166,7 @@ Give Ali this instruction:
 > | A    | www  | `$PUBLIC_IP` | 600   |
 >
 > Save. Propagation is usually ~5 min. Verify with:
-> `dig +short siren.<TLD> @8.8.8.8` until it returns `$PUBLIC_IP`.
+> `dig +short siren.ink @8.8.8.8` until it returns `$PUBLIC_IP`.
 
 Wait for Ali to confirm the dig returns the right IP before moving on.
 
@@ -259,7 +248,7 @@ map $http_upgrade $connection_upgrade {
 
 server {
     listen 80;
-    server_name siren.<TLD> www.siren.<TLD>;
+    server_name siren.ink www.siren.ink;
 
     # Certbot challenges only; everything else → HTTPS
     location /.well-known/acme-challenge/ { root /var/www/html; }
@@ -268,10 +257,10 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name siren.<TLD> www.siren.<TLD>;
+    server_name siren.ink www.siren.ink;
 
-    ssl_certificate     /etc/letsencrypt/live/siren.<TLD>/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/siren.<TLD>/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/siren.ink/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/siren.ink/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
 
@@ -312,7 +301,7 @@ nginx -t && systemctl reload nginx
 
 ```bash
 certbot --nginx \
-  -d siren.<TLD> -d www.siren.<TLD> \
+  -d siren.ink -d www.siren.ink \
   --agree-tos --email alihsn@utexas.edu --redirect -n
 systemctl reload nginx
 ```
@@ -324,10 +313,10 @@ sometimes Certbot overwrites them. Restore from the snippet above if needed.
 ### 10. Smoke tests
 
 ```bash
-curl -I https://siren.<TLD>                      # 200 OK
-curl -sS https://siren.<TLD>/api/incidents       # JSON or 503
+curl -I https://siren.ink                      # 200 OK
+curl -sS https://siren.ink/api/incidents       # JSON or 503
 # WebSocket test from another terminal
-npx -y wscat -c wss://siren.<TLD>/                # should connect
+npx -y wscat -c wss://siren.ink/                # should connect
 ```
 
 Open the site in a browser, click **Play Demo** on the homepage, confirm:
