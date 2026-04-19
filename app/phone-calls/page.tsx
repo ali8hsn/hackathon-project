@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import LiveCallerQueue from "../_components/LiveCallerQueue";
+import MapView, { type MapPin } from "../_components/MapView";
 import { useLivePhoneCallers } from "../_components/useLivePhoneCallers";
 import {
   usePhoneMonitor,
@@ -65,7 +66,8 @@ const TYPE_COLORS: Record<MonitorEventType, string> = {
 };
 
 export default function PhoneCallsPage() {
-  const { callers, wsConnected: callersWs } = useLivePhoneCallers();
+  const { callers, pins: livePins, wsConnected: callersWs } =
+    useLivePhoneCallers();
   const monitor = usePhoneMonitor();
 
   const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null);
@@ -120,6 +122,22 @@ export default function PhoneCallsPage() {
 
   const wsConnected = callersWs || monitor.wsConnected;
 
+  // Live caller map pins — amber so they're visually consistent with the
+  // homepage map, and `active: true` so each one draws the pulsing ring.
+  const mapPins = useMemo<MapPin[]>(
+    () =>
+      livePins.map((p) => ({
+        id: `live:${p.sessionId}`,
+        lat: p.lat,
+        lng: p.lng,
+        label: p.phone,
+        sublabel: p.ticket?.type || p.ticket?.location || undefined,
+        color: "#f59e0b",
+        active: true,
+      })),
+    [livePins]
+  );
+
   return (
     <div className="h-full overflow-y-auto bg-surface-lowest">
       <div className="mx-auto max-w-[1280px] px-8 py-8">
@@ -173,6 +191,66 @@ export default function PhoneCallsPage() {
             tone="muted"
           />
         </div>
+
+        {/* Live caller map */}
+        <section className="mb-6">
+          <div
+            className="rounded-3xl overflow-hidden border"
+            style={{
+              borderColor: "rgba(255,255,255,0.08)",
+              background: "rgba(24, 24, 34, 0.6)",
+            }}
+          >
+            <div
+              className="flex items-center justify-between px-5 py-3 border-b"
+              style={{ borderColor: "rgba(255,255,255,0.06)" }}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className="material-symbols-outlined text-[18px]"
+                  style={{
+                    fontVariationSettings: "'FILL' 1",
+                    color: "#f59e0b",
+                  }}
+                >
+                  location_on
+                </span>
+                <p
+                  className="text-[11px] font-bold uppercase tracking-[0.2em]"
+                  style={{ color: "white" }}
+                >
+                  Live caller map
+                </p>
+              </div>
+              <p
+                className="text-[10px] font-mono"
+                style={{ color: "rgba(255,255,255,0.5)" }}
+              >
+                {mapPins.length} live pin{mapPins.length === 1 ? "" : "s"}
+              </p>
+            </div>
+            <div className="relative h-[380px]">
+              <MapView pins={mapPins} />
+              {mapPins.length === 0 && (
+                <div
+                  className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                  style={{ background: "rgba(10,10,15,0.35)" }}
+                >
+                  <p
+                    className="text-[11px] font-bold uppercase tracking-[0.18em] px-3 py-1.5 rounded-full border"
+                    style={{
+                      color: "rgba(255,255,255,0.65)",
+                      borderColor: "rgba(255,255,255,0.16)",
+                      background: "rgba(10,10,15,0.65)",
+                    }}
+                  >
+                    Awaiting live calls
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
 
         {/* Cards section */}
         <section className="mb-8">

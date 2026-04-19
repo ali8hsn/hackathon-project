@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import MapView from "../_components/MapView";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import MapView, { type MapPin } from "../_components/MapView";
 
 interface BackendIncident {
   id: string;
@@ -94,12 +94,43 @@ export default function TrendDetectionPage() {
     setIsAnalyzing(false);
   }, []);
 
-  // Build map URL centered on incidents if we have coordinates, otherwise Austin area
-  const mapCenter = lowPriorityIncidents.length > 0
-    ? lowPriorityIncidents[0].coordinates
-    : escalatedIncidents.length > 0
-      ? escalatedIncidents[0].coordinates
-      : { lat: 30.2672, lng: -97.7431 };
+  // Build map pins from real incident coordinates so each dot reflects an
+  // actual scanned signal rather than a fake offset around a single center.
+  // Escalated incidents render in a distinct violet so the eye can pick them
+  // out from the low-priority chatter.
+  const mapPins = useMemo<MapPin[]>(() => {
+    function isGeocoded(i: BackendIncident): boolean {
+      const { lat, lng } = i.coordinates || {};
+      return (
+        typeof lat === "number" &&
+        typeof lng === "number" &&
+        lat !== 0 &&
+        lng !== 0
+      );
+    }
+    const low: MapPin[] = lowPriorityIncidents
+      .filter(isGeocoded)
+      .map((i) => ({
+        id: `low:${i.id}`,
+        lat: i.coordinates.lat,
+        lng: i.coordinates.lng,
+        label: i.title,
+        sublabel: i.location || undefined,
+        color: "#94a3b8",
+      }));
+    const escalated: MapPin[] = escalatedIncidents
+      .filter(isGeocoded)
+      .map((i) => ({
+        id: `esc:${i.id}`,
+        lat: i.coordinates.lat,
+        lng: i.coordinates.lng,
+        label: i.title,
+        sublabel: i.location || undefined,
+        color: "#a78bfa",
+        active: true,
+      }));
+    return [...low, ...escalated];
+  }, [lowPriorityIncidents, escalatedIncidents]);
 
 
   const totalItems = escalatedIncidents.length + lowPriorityIncidents.length;
@@ -304,10 +335,7 @@ export default function TrendDetectionPage() {
               Incident Coverage — Last 24h
             </div>
           </div>
-          <MapView
-            center={mapCenter}
-            pinCount={lowPriorityIncidents.reduce((sum, i) => sum + (i.callerCount || 1), 0) + escalatedIncidents.reduce((sum, i) => sum + (i.callerCount || 1), 0)}
-          />
+          <MapView pins={mapPins} />
         </div>
       </div>
     </div>

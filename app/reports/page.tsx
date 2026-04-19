@@ -5,9 +5,10 @@
 // sheet; the "Download PDF" action opens it with ?print=1 which auto-fires
 // window.print() (letting the browser save the page as a clean PDF).
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Incident } from "../_lib/types";
+import MapView, { type MapPin } from "../_components/MapView";
 
 type SortKey = "severity" | "time" | "name";
 
@@ -110,6 +111,39 @@ export default function ReportsPage() {
     return sorted;
   }, [incidents, query, sortKey]);
 
+  // Pins for the overview map — one per geocoded incident in the current
+  // filtered/sorted view. Hover state highlights whichever row the pointer
+  // is over and vice-versa via clicking a pin.
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const pins = useMemo<MapPin[]>(
+    () =>
+      rows
+        .filter(({ incident }) => {
+          const { lat, lng } = incident.coordinates || {};
+          return (
+            typeof lat === "number" &&
+            typeof lng === "number" &&
+            lat !== 0 &&
+            lng !== 0
+          );
+        })
+        .map(({ incident, score }) => ({
+          id: incident.id,
+          lat: incident.coordinates.lat,
+          lng: incident.coordinates.lng,
+          label: incident.title,
+          sublabel: incident.location || undefined,
+          severity: score,
+          active: hoveredId === incident.id,
+        })),
+    [rows, hoveredId]
+  );
+
+  const handlePinClick = useCallback((pin: MapPin) => {
+    const el = document.getElementById(`report-row-${pin.id}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
   const headerRef = useReveal<HTMLDivElement>();
 
   return (
@@ -170,6 +204,33 @@ export default function ReportsPage() {
           </div>
         </div>
 
+        {/* Overview map — every geocoded incident across the current view */}
+        {!loading && pins.length > 0 && (
+          <div
+            className="rounded-2xl border border-outline-variant/30 overflow-hidden bg-surface-low/50 mb-5"
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-outline-variant/30 bg-surface-low">
+              <div className="flex items-center gap-2">
+                <span
+                  className="material-symbols-outlined text-[18px] text-primary-dim"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  location_on
+                </span>
+                <p className="text-[10.5px] font-bold uppercase tracking-[0.2em] text-on-surface">
+                  Incident map
+                </p>
+              </div>
+              <p className="text-[10px] font-mono text-on-surface-variant">
+                {pins.length} of {rows.length} pinned
+              </p>
+            </div>
+            <div className="relative h-[320px]">
+              <MapView pins={pins} onPinClick={handlePinClick} />
+            </div>
+          </div>
+        )}
+
         {/* Table */}
         {loading ? (
           <SkeletonTable />
@@ -191,6 +252,8 @@ export default function ReportsPage() {
                   incident={incident}
                   score={score}
                   index={idx}
+                  isHovered={hoveredId === incident.id}
+                  onHover={setHoveredId}
                 />
               ))}
             </ul>
@@ -221,10 +284,14 @@ function ReportRow({
   incident,
   score,
   index,
+  isHovered,
+  onHover,
 }: {
   incident: Incident;
   score: number;
   index: number;
+  isHovered?: boolean;
+  onHover?: (id: string | null) => void;
 }) {
   const ref = useReveal<HTMLLIElement>();
   const hex = severityHex(score);
@@ -246,12 +313,17 @@ function ReportRow({
   return (
     <li
       ref={ref}
+      id={`report-row-${incident.id}`}
       className="reveal"
       style={{ animationDelay: `${Math.min(index * 40, 300)}ms` }}
+      onMouseEnter={() => onHover?.(incident.id)}
+      onMouseLeave={() => onHover?.(null)}
     >
       <Link
         href={`/situation-sheet/${incident.id}`}
-        className="grid grid-cols-[60px_minmax(0,1fr)_160px_120px_200px] gap-4 px-5 py-4 items-center hover:bg-surface-high/40 transition-colors group"
+        className={`grid grid-cols-[60px_minmax(0,1fr)_160px_120px_200px] gap-4 px-5 py-4 items-center transition-colors group ${
+          isHovered ? "bg-surface-high/40" : "hover:bg-surface-high/40"
+        }`}
       >
         {/* Severity pill */}
         <div className="flex items-center">

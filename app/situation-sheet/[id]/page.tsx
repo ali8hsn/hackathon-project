@@ -1194,16 +1194,28 @@ export default function SituationSheetPage() {
           </div>
           <div className="h-72 relative shrink-0">
             <MapView
-              pins={[
-                {
-                  id: incident.id,
-                  lat: incident.coordinates?.lat ?? 0,
-                  lng: incident.coordinates?.lng ?? 0,
-                  label: incident.title,
-                  severity: incident.severityScore,
-                  active: true,
-                },
-              ]}
+              // Drop the pin entirely when the incident has no real
+              // coordinates so MapView centers on the Austin fallback
+              // instead of dropping a pin at lat/lng 0.
+              pins={
+                incident.coordinates &&
+                typeof incident.coordinates.lat === "number" &&
+                typeof incident.coordinates.lng === "number" &&
+                incident.coordinates.lat !== 0 &&
+                incident.coordinates.lng !== 0
+                  ? [
+                      {
+                        id: incident.id,
+                        lat: incident.coordinates.lat,
+                        lng: incident.coordinates.lng,
+                        label: incident.title,
+                        sublabel: incident.location || undefined,
+                        severity: incident.severityScore,
+                        active: true,
+                      },
+                    ]
+                  : []
+              }
             />
           </div>
 

@@ -129,6 +129,29 @@ export default function HomePage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [isLive, setIsLive] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // "Live only" demo mode hides the saved-incident feed + map pins so the
+  // dashboard cleanly showcases inbound Twilio callers as they arrive.
+  // Persisted to localStorage so a presenter doesn't have to re-toggle on
+  // every refresh during the hookathon demo.
+  const [liveOnly, setLiveOnly] = useState(false);
+  useEffect(() => {
+    try {
+      setLiveOnly(localStorage.getItem("siren.liveOnly") === "1");
+    } catch {
+      // ignore (private mode, etc.)
+    }
+  }, []);
+  const toggleLiveOnly = useCallback(() => {
+    setLiveOnly((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("siren.liveOnly", next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
   const { callers: liveCallers, pins: livePins } = useLivePhoneCallers();
   const { clusters, mergeCluster } = useLiveClusters();
   const demo = useDemo();
@@ -178,6 +201,20 @@ export default function HomePage() {
   });
 
   const pins = useMemo<MapPin[]>(() => {
+    // Live phone calls render in amber so dispatchers visually distinguish
+    // an active caller from a saved incident. They drop off the map when
+    // session_end fires and reappear (with severity color) once the call
+    // is persisted to MongoDB on the next /api/incidents poll.
+    const phonePins: MapPin[] = livePins.map((p) => ({
+      id: `live:${p.sessionId}`,
+      lat: p.lat,
+      lng: p.lng,
+      label: p.phone,
+      sublabel: p.ticket?.type || p.ticket?.location || undefined,
+      color: "#f59e0b",
+      active: true,
+    }));
+    if (liveOnly) return phonePins;
     const incidentPins: MapPin[] = sorted
       .filter(({ incident }) => {
         const { lat, lng } = incident.coordinates || {};
@@ -196,20 +233,8 @@ export default function HomePage() {
         severity: score,
         active: hoveredId === incident.id,
       }));
-    // Live phone calls render in amber so dispatchers visually distinguish
-    // an active caller from a saved incident. They drop off the map when
-    // session_end fires and reappear (with severity color) once the call
-    // is persisted to MongoDB on the next /api/incidents poll.
-    const phonePins: MapPin[] = livePins.map((p) => ({
-      id: `live:${p.sessionId}`,
-      lat: p.lat,
-      lng: p.lng,
-      label: p.phone,
-      sublabel: p.ticket?.type || p.ticket?.location || undefined,
-      color: "#f59e0b",
-    }));
     return [...incidentPins, ...phonePins];
-  }, [sorted, hoveredId, livePins]);
+  }, [sorted, hoveredId, livePins, liveOnly]);
 
   const highCount = incidents.filter((i) => i.priority === "HIGH").length;
   const medCount = incidents.filter((i) => i.priority === "MEDIUM").length;
@@ -471,47 +496,93 @@ export default function HomePage() {
                   />
                 </div>
               )}
-              <div className="flex items-center gap-3 mb-4">
-                <span
-                  className="h-px flex-1"
+              {liveOnly ? (
+                <div
+                  className="rounded-2xl border px-5 py-4 flex items-center gap-3"
                   style={{
-                    background:
-                      "linear-gradient(to right, transparent, rgba(255,255,255,0.1), transparent)",
+                    borderColor: "rgba(245,158,11,0.28)",
+                    background: "rgba(245,158,11,0.06)",
                   }}
-                />
-                <span
-                  className="text-[10px] font-bold uppercase tracking-[0.22em]"
-                  style={{ color: "rgba(255,255,255,0.45)" }}
                 >
-                  Active situations · {sorted.length}
-                  {liveCallers.length > 0
-                    ? ` · ${liveCallers.length} live`
-                    : ""}
-                </span>
-                <span
-                  className="h-px flex-1"
-                  style={{
-                    background:
-                      "linear-gradient(to right, rgba(255,255,255,0.1), transparent, transparent)",
-                  }}
-                />
-              </div>
-
-              {sorted.length === 0 ? (
-                <EmptyFeed onPlayDemo={() => demo.openDemo()} />
+                  <span
+                    className="material-symbols-outlined text-[20px]"
+                    style={{ color: "#f59e0b" }}
+                  >
+                    bolt
+                  </span>
+                  <div className="flex-1">
+                    <p
+                      className="text-[11px] font-bold uppercase tracking-[0.18em]"
+                      style={{ color: "#fbbf24" }}
+                    >
+                      Live-only demo mode
+                    </p>
+                    <p
+                      className="text-[12px] mt-0.5"
+                      style={{ color: "rgba(255,255,255,0.7)" }}
+                    >
+                      Showing only inbound Twilio calls. Saved incidents hidden
+                      for the demo.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={toggleLiveOnly}
+                    className="text-[10.5px] font-bold uppercase tracking-[0.16em] px-3 py-1.5 rounded-lg border"
+                    style={{
+                      color: "rgba(255,255,255,0.85)",
+                      borderColor: "rgba(255,255,255,0.18)",
+                      background: "rgba(255,255,255,0.04)",
+                    }}
+                  >
+                    Show all
+                  </button>
+                </div>
               ) : (
-                <ul className="space-y-3">
-                  {sorted.map(({ incident, score }, idx) => (
-                    <IncidentBlock
-                      key={incident.id}
-                      incident={incident}
-                      score={score}
-                      index={idx}
-                      isHovered={hoveredId === incident.id}
-                      onHover={setHoveredId}
+                <>
+                  <div className="flex items-center gap-3 mb-4">
+                    <span
+                      className="h-px flex-1"
+                      style={{
+                        background:
+                          "linear-gradient(to right, transparent, rgba(255,255,255,0.1), transparent)",
+                      }}
                     />
-                  ))}
-                </ul>
+                    <span
+                      className="text-[10px] font-bold uppercase tracking-[0.22em]"
+                      style={{ color: "rgba(255,255,255,0.45)" }}
+                    >
+                      Active situations · {sorted.length}
+                      {liveCallers.length > 0
+                        ? ` · ${liveCallers.length} live`
+                        : ""}
+                    </span>
+                    <span
+                      className="h-px flex-1"
+                      style={{
+                        background:
+                          "linear-gradient(to right, rgba(255,255,255,0.1), transparent, transparent)",
+                      }}
+                    />
+                  </div>
+
+                  {sorted.length === 0 ? (
+                    <EmptyFeed onPlayDemo={() => demo.openDemo()} />
+                  ) : (
+                    <ul className="space-y-3">
+                      {sorted.map(({ incident, score }, idx) => (
+                        <IncidentBlock
+                          key={incident.id}
+                          incident={incident}
+                          score={score}
+                          index={idx}
+                          isHovered={hoveredId === incident.id}
+                          onHover={setHoveredId}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </>
               )}
             </div>
 
@@ -533,7 +604,7 @@ export default function HomePage() {
                       className="material-symbols-outlined text-[18px]"
                       style={{
                         fontVariationSettings: "'FILL' 1",
-                        color: "#a78bfa",
+                        color: liveOnly ? "#f59e0b" : "#a78bfa",
                       }}
                     >
                       location_on
@@ -545,12 +616,42 @@ export default function HomePage() {
                       Caller map
                     </p>
                   </div>
-                  <p
-                    className="text-[10px] font-mono"
-                    style={{ color: "rgba(255,255,255,0.5)" }}
-                  >
-                    {pins.length} pin{pins.length === 1 ? "" : "s"}
-                  </p>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={toggleLiveOnly}
+                      title={
+                        liveOnly
+                          ? "Showing only live Twilio calls — click to also show saved incidents"
+                          : "Show only live Twilio calls (hide saved incidents)"
+                      }
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[9.5px] font-bold uppercase tracking-[0.16em] transition-colors"
+                      style={{
+                        color: liveOnly ? "#f59e0b" : "rgba(255,255,255,0.65)",
+                        borderColor: liveOnly
+                          ? "rgba(245,158,11,0.45)"
+                          : "rgba(255,255,255,0.16)",
+                        background: liveOnly
+                          ? "rgba(245,158,11,0.10)"
+                          : "rgba(255,255,255,0.04)",
+                      }}
+                    >
+                      <span
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{
+                          background: liveOnly ? "#f59e0b" : "rgba(255,255,255,0.4)",
+                          boxShadow: liveOnly ? "0 0 8px #f59e0b" : "none",
+                        }}
+                      />
+                      {liveOnly ? "Live only" : "Demo: live only"}
+                    </button>
+                    <p
+                      className="text-[10px] font-mono"
+                      style={{ color: "rgba(255,255,255,0.5)" }}
+                    >
+                      {pins.length} pin{pins.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
                 </div>
                 <div className="relative h-[560px]">
                   <MapView pins={pins} onPinClick={handlePinClick} />
