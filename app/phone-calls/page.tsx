@@ -14,6 +14,10 @@ import LiveCallerQueue from "../_components/LiveCallerQueue";
 import MapView, { type MapPin } from "../_components/MapView";
 import { useLivePhoneCallers } from "../_components/useLivePhoneCallers";
 import {
+  clusterLivePhonePins,
+  type LivePhoneCluster,
+} from "../_components/livePhoneClusters";
+import {
   usePhoneMonitor,
   type MonitorEvent,
   type MonitorEventType,
@@ -122,20 +126,44 @@ export default function PhoneCallsPage() {
 
   const wsConnected = callersWs || monitor.wsConnected;
 
-  // Live caller map pins — amber so they're visually consistent with the
-  // homepage map, and `active: true` so each one draws the pulsing ring.
+  // Cluster live callers reporting the same incident (shared incidentId or
+  // ~500 m + same incident-type token). Singletons stay as 1-element groups
+  // so map rendering can treat both the same way.
+  const clusters = useMemo<LivePhoneCluster[]>(
+    () => clusterLivePhonePins(livePins),
+    [livePins]
+  );
+
+  const joinedClusters = useMemo(
+    () => clusters.filter((c) => c.pins.length >= 2),
+    [clusters]
+  );
+
+  // Map markers: one per cluster centroid. Joined clusters render as a
+  // bigger amber bubble with the count baked in (MapView reads `count`).
   const mapPins = useMemo<MapPin[]>(
     () =>
-      livePins.map((p) => ({
-        id: `live:${p.sessionId}`,
-        lat: p.lat,
-        lng: p.lng,
-        label: p.phone,
-        sublabel: p.ticket?.type || p.ticket?.location || undefined,
-        color: "#f59e0b",
-        active: true,
-      })),
-    [livePins]
+      clusters.map((c) => {
+        const isJoined = c.pins.length >= 2;
+        const sample = c.pins[0];
+        const label = isJoined
+          ? `${c.pins.length} joined callers`
+          : sample.phone;
+        const sublabel = isJoined
+          ? c.type || c.location || `${c.pins.length} callers`
+          : sample.ticket?.type || sample.ticket?.location || undefined;
+        return {
+          id: `cluster:${c.id}`,
+          lat: c.lat,
+          lng: c.lng,
+          label,
+          sublabel,
+          color: "#f59e0b",
+          active: true,
+          count: isJoined ? c.pins.length : undefined,
+        };
+      }),
+    [clusters]
   );
 
   return (
@@ -161,7 +189,7 @@ export default function PhoneCallsPage() {
         </div>
 
         {/* Status header strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
           <StatusPill
             label="WebSocket"
             value={wsConnected ? "Connected" : "Reconnecting…"}
@@ -184,6 +212,11 @@ export default function PhoneCallsPage() {
             label="Active calls"
             value={String(callers.length)}
             tone={callers.length > 0 ? "ok" : "muted"}
+          />
+          <StatusPill
+            label="Joined incidents"
+            value={String(joinedClusters.length)}
+            tone={joinedClusters.length > 0 ? "warn" : "muted"}
           />
           <StatusPill
             label="Deploy"
@@ -226,7 +259,10 @@ export default function PhoneCallsPage() {
                 className="text-[10px] font-mono"
                 style={{ color: "rgba(255,255,255,0.5)" }}
               >
-                {mapPins.length} live pin{mapPins.length === 1 ? "" : "s"}
+                {livePins.length} live pin{livePins.length === 1 ? "" : "s"}
+                {joinedClusters.length > 0
+                  ? ` · ${joinedClusters.length} joined`
+                  : ""}
               </p>
             </div>
             <div className="relative h-[380px]">
@@ -251,6 +287,16 @@ export default function PhoneCallsPage() {
             </div>
           </div>
         </section>
+
+        {/* Joined-incident clusters — only shown when 2+ callers look like
+            they're reporting the same event. */}
+        {joinedClusters.length > 0 && (
+          <JoinedIncidents
+            clusters={joinedClusters}
+            callers={callers}
+            now={now}
+          />
+        )}
 
         {/* Cards section */}
         <section className="mb-8">
@@ -325,6 +371,162 @@ function StatusPill({
         {value}
       </span>
     </div>
+  );
+}
+
+function JoinedIncidents({
+  clusters,
+  callers,
+  now,
+}: {
+  clusters: LivePhoneCluster[];
+  callers: ReturnType<typeof useLivePhoneCallers>["callers"];
+  now: number;
+}) {
+  // Map session id → caller so we can show status / elapsed for each chip
+  // without re-deriving them from the raw WS frames.
+  const callerById = useMemo(() => {
+    const map = new Map<string, (typeof callers)[number]>();
+    for (const c of callers) map.set(c.id, c);
+    return map;
+  }, [callers]);
+
+  return (
+    <section className="mb-8">
+      <div className="flex items-end justify-between mb-3">
+        <div>
+          <div className="flex items-center gap-2.5 mb-1">
+            <span className="relative flex h-2.5 w-2.5">
+              <span
+                className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60"
+                style={{ background: "#f59e0b" }}
+              />
+              <span
+                className="relative inline-flex rounded-full h-2.5 w-2.5"
+                style={{ background: "#f59e0b" }}
+              />
+            </span>
+            <h2 className="text-[13px] font-bold uppercase tracking-[0.16em] text-on-surface">
+              Joined incidents
+            </h2>
+            <span
+              className="text-[11px]"
+              style={{ color: "rgba(255,255,255,0.55)" }}
+            >
+              {clusters.length} group{clusters.length === 1 ? "" : "s"} ·{" "}
+              {clusters.reduce((acc, c) => acc + c.pins.length, 0)} callers
+            </span>
+          </div>
+          <p
+            className="text-[12px]"
+            style={{ color: "rgba(255,255,255,0.55)" }}
+          >
+            Multiple callers reporting the same event — merged by location +
+            incident type.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {clusters.map((c) => (
+          <article
+            key={c.id}
+            className="rounded-2xl border p-4 flex flex-col gap-3"
+            style={{
+              background:
+                "linear-gradient(180deg, rgba(245,158,11,0.10), rgba(24,24,34,0.6))",
+              borderColor: "rgba(245,158,11,0.32)",
+            }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p
+                  className="text-[10px] font-bold uppercase tracking-[0.18em] mb-1"
+                  style={{ color: "#fbbf24" }}
+                >
+                  Mass-event cluster
+                </p>
+                <p className="text-[15px] font-semibold text-on-surface truncate">
+                  {c.type || "Unclassified incident"}
+                </p>
+                {c.location && (
+                  <p
+                    className="text-[12px] truncate"
+                    style={{ color: "rgba(255,255,255,0.6)" }}
+                  >
+                    {c.location}
+                  </p>
+                )}
+              </div>
+              <span
+                className="shrink-0 inline-flex items-center justify-center rounded-full h-9 min-w-9 px-2 text-[13px] font-extrabold"
+                style={{
+                  background: "rgba(245,158,11,0.18)",
+                  color: "#fbbf24",
+                  border: "1px solid rgba(245,158,11,0.45)",
+                }}
+                title={`${c.pins.length} callers joined into one bubble on the map`}
+              >
+                ×{c.pins.length}
+              </span>
+            </div>
+
+            <ul className="flex flex-col gap-1.5">
+              {c.pins.map((p) => {
+                const caller = callerById.get(p.sessionId);
+                const elapsed = caller
+                  ? Math.max(
+                      0,
+                      Math.floor((now - caller.startedAt) / 1000)
+                    )
+                  : null;
+                const status = caller?.status ?? "triaging";
+                const statusColor =
+                  status === "ready"
+                    ? "#86efac"
+                    : status === "ringing"
+                      ? "#fbbf24"
+                      : "#a78bfa";
+                return (
+                  <li
+                    key={p.sessionId}
+                    className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg"
+                    style={{ background: "rgba(0,0,0,0.25)" }}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="inline-block h-1.5 w-1.5 rounded-full shrink-0"
+                        style={{ background: statusColor }}
+                      />
+                      <span className="text-[12px] font-mono truncate text-on-surface">
+                        {p.phone}
+                      </span>
+                    </div>
+                    <div
+                      className="flex items-center gap-2 text-[10.5px] font-mono shrink-0"
+                      style={{ color: "rgba(255,255,255,0.55)" }}
+                    >
+                      <span
+                        className="uppercase tracking-wider"
+                        style={{ color: statusColor }}
+                      >
+                        {status}
+                      </span>
+                      {elapsed != null && (
+                        <span>
+                          {Math.floor(elapsed / 60)}:
+                          {String(elapsed % 60).padStart(2, "0")}
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 

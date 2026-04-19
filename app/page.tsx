@@ -321,7 +321,7 @@ export default function HomePage() {
             Every 911 call,
             <br />
             <span style={{ fontStyle: "italic", color: "#6d28d9" }}>
-              triaged in seconds.
+              treated with the same care.
             </span>
           </h1>
 
@@ -329,8 +329,8 @@ export default function HomePage() {
             className="mt-8 mx-auto text-[17px] leading-relaxed max-w-xl"
             style={{ color: "rgba(10,10,15,0.65)" }}
           >
-            Siren AI listens while callers wait on hold, extracts structured
-            facts, and scores severity before a dispatcher picks up.
+            Siren AI stays on the line with every caller — listening, taking
+            notes, and surfacing context so no one waits alone for help.
           </p>
 
           <div className="mt-10 flex items-center justify-center gap-3 flex-wrap">
@@ -391,7 +391,7 @@ export default function HomePage() {
               className="h-3 w-px"
               style={{ background: "rgba(10,10,15,0.15)" }}
             />
-            <span>&lt; 30s triage</span>
+            <span>Every caller heard</span>
             <div
               className="h-3 w-px"
               style={{ background: "rgba(10,10,15,0.15)" }}

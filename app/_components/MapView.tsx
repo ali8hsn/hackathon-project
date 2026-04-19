@@ -22,6 +22,13 @@ export interface MapPin {
   color?: string;
   /** Optional small line shown under `label` in the popup. */
   sublabel?: string;
+  /**
+   * If set and > 1, render this pin as a "joined" cluster bubble — bigger,
+   * brighter, with the count drawn in the middle. Used by the phone-calls
+   * map to merge multiple callers reporting the same incident into one
+   * visual marker.
+   */
+  count?: number;
 }
 
 interface MapViewProps {
@@ -242,19 +249,31 @@ export default function MapView({
           continue;
         const color = pin.color || severityColor(pin.severity);
 
+        // Cluster pins (count >= 2) render as a larger bubble with the count
+        // baked in. Size scales with sqrt(count) so a 6-caller cluster is
+        // visibly bigger than a 2-caller one but never blows up.
+        const isCluster = typeof pin.count === "number" && pin.count >= 2;
+        const baseSize = 22;
+        const size = isCluster
+          ? Math.min(56, Math.round(baseSize + 9 * Math.sqrt(pin.count! - 1)))
+          : baseSize;
+
         const el = document.createElement("div");
-        el.className = "siren-pin";
+        el.className = isCluster ? "siren-pin siren-cluster" : "siren-pin";
         el.style.cssText = `
           position: relative;
-          width: 22px;
-          height: 22px;
+          width: ${size}px;
+          height: ${size}px;
           border-radius: 50%;
           background: ${color};
           box-shadow:
-            0 0 0 4px ${color}33,
-            0 0 24px ${color}66,
-            0 4px 10px rgba(0,0,0,0.4);
+            0 0 0 ${isCluster ? 6 : 4}px ${color}33,
+            0 0 ${isCluster ? 36 : 24}px ${color}${isCluster ? "99" : "66"},
+            0 4px 10px rgba(0,0,0,0.45);
           cursor: ${onPinClick ? "pointer" : "default"};
+          display: flex;
+          align-items: center;
+          justify-content: center;
         `;
         if (pin.active) {
           const ring = document.createElement("span");
@@ -267,14 +286,32 @@ export default function MapView({
           `;
           el.appendChild(ring);
         }
-        const dot = document.createElement("span");
-        dot.style.cssText = `
-          position: absolute;
-          inset: 7px;
-          border-radius: 50%;
-          background: white;
-        `;
-        el.appendChild(dot);
+        if (isCluster) {
+          // Draw the count in the middle of the bubble. White text on the
+          // colored disc reads cleanly at every size.
+          const num = document.createElement("span");
+          num.textContent = String(pin.count);
+          num.style.cssText = `
+            position: relative;
+            color: white;
+            font-family: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+            font-weight: 800;
+            font-size: ${Math.max(11, Math.round(size * 0.42))}px;
+            line-height: 1;
+            letter-spacing: -0.02em;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+          `;
+          el.appendChild(num);
+        } else {
+          const dot = document.createElement("span");
+          dot.style.cssText = `
+            position: absolute;
+            inset: 7px;
+            border-radius: 50%;
+            background: white;
+          `;
+          el.appendChild(dot);
+        }
 
         if (onPinClick) {
           el.addEventListener("click", (e) => {
@@ -297,11 +334,13 @@ export default function MapView({
                      : ""
                  }
                  ${
-                   pin.severity
-                     ? `<div style="font-size:10px;color:${color};font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Severity ${pin.severity}/10</div>`
-                     : pin.color
-                       ? `<div style="font-size:10px;color:${color};font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Live call</div>`
-                       : ""
+                   isCluster
+                     ? `<div style="font-size:10px;color:${color};font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">${pin.count} callers · joined</div>`
+                     : pin.severity
+                       ? `<div style="font-size:10px;color:${color};font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Severity ${pin.severity}/10</div>`
+                       : pin.color
+                         ? `<div style="font-size:10px;color:${color};font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Live call</div>`
+                         : ""
                  }
                </div>`
             )
