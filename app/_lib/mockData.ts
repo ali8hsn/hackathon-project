@@ -330,7 +330,7 @@ export const mockTrends: TrendPattern[] = [
   },
 ];
 
-// ─── Mock AI Triage Calls (Sentinel Assist) ──────────────────────────────────
+// ─── Mock AI Triage Calls (Haashir Assist) ──────────────────────────────────
 
 export const mockTriageCalls: AITriageCall[] = [
   {

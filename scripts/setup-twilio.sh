@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# Sentinel — Twilio + Ngrok Setup Helper
+# Haashir — Twilio + Ngrok Setup Helper
 # ============================================================
 # This script:
 #   1. Starts ngrok to tunnel your localhost:3000
@@ -21,7 +21,7 @@ set -e
 PORT=${1:-3000}
 
 echo "═══════════════════════════════════════════════════════════════"
-echo "🛡️  Sentinel — Twilio + Ngrok Setup"
+echo "🛡️  Haashir — Twilio + Ngrok Setup"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 
@@ -43,7 +43,7 @@ echo "🔗 Starting ngrok tunnel on port $PORT..."
 echo ""
 
 # Start ngrok in the background and wait for it to be ready
-ngrok http $PORT --log=stdout > /tmp/ngrok-sentinel.log 2>&1 &
+ngrok http $PORT --log=stdout > /tmp/ngrok-haashir.log 2>&1 &
 NGROK_PID=$!
 
 # Wait for ngrok to start

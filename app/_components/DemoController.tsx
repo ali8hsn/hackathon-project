@@ -21,7 +21,7 @@ export const DEMO_STEPS: {
     | "report"
     | "transcripts"
     | "conflicts"
-    | "sentinel"
+    | "haashir"
     | "trend"
     | "intake";
 }[] = [
@@ -99,7 +99,7 @@ export const DEMO_STEPS: {
     atSec: 42,
     title: "Beyond the call",
     body: "AI Assist triages priority, Trend Detection spots incident clusters, and every caller-on-hold is being captured.",
-    spotlight: "sentinel",
+    spotlight: "haashir",
   },
 ];
 

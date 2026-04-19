@@ -10,7 +10,7 @@ const seeds = [
   { name: "Suspicious Person at School", file: "scripts/seed-demo.ts" },
   { name: "Highway Multi-Vehicle Accident", file: "scripts/seed-highway-accident.ts" },
   { name: "Neighborhood Gas Leak", file: "scripts/seed-gas-leak.ts" },
-  { name: "Active Shooter (Sentinel Assist)", file: "scripts/seed-shooting.ts" },
+  { name: "Active Shooter (Haashir Assist)", file: "scripts/seed-shooting.ts" },
   { name: "Variety Pack (Low-Priority)", file: "scripts/seed-variety.ts" },
   { name: "Medium-Priority Incidents", file: "scripts/seed-medium.ts" },
   { name: "Extra Low-Priority Incidents", file: "scripts/seed-low.ts" },
@@ -43,7 +43,7 @@ async function main() {
   console.log("\nPages to check:");
   console.log("  → Monitor:         http://localhost:3000/");
   console.log("  → Trend Detection: http://localhost:3000/trend-detection");
-  console.log("  → Sentinel Assist: http://localhost:3000/sentinel-assist");
+  console.log("  → Haashir Assist:  http://localhost:3000/haashir-assist");
 }
 
 main().catch(console.error);

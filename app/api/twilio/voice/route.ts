@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="Polly.Matthew">
-    Sentinel Emergency Dispatch. Please describe your emergency after the tone. When you are finished, hang up or press the pound key.
+    Haashir Emergency Dispatch. Please describe your emergency after the tone. When you are finished, hang up or press the pound key.
   </Say>
   <Record
     maxLength="120"

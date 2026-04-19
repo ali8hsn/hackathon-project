@@ -1,5 +1,5 @@
 /**
- * Unified server: Next.js (Sentinel UI + API) + Express (ARIA intake + WebSocket)
+ * Unified server: Next.js (Haashir UI + API) + Express (ARIA intake + WebSocket)
  * Dev:   npm run dev
  * Prod:  npm run build && npm start
  */

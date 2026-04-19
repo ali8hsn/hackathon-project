@@ -141,7 +141,7 @@ The queue renders two things:
 3. For each step, pushes a partial `LiveCaller` patch upward to the
    homepage, so fields appear in real time
 4. For each step, also emits a `spotlight` key (`queue`, `report`,
-   `sentinel`, etc.) that the homepage uses to highlight the relevant
+   `haashir`, etc.) that the homepage uses to highlight the relevant
    section with a brand ring
 5. Play / pause / restart / stop controls
 6. Graceful fallback: if the MP3 is missing, a yellow notice appears
@@ -190,7 +190,7 @@ Google Fonts (this sandbox doesn't, but EC2 will).
 
 ## What I did NOT touch
 
-- Anything under `app/sentinel-assist`, `app/trend-detection`, or
+- Anything under `app/haashir-assist`, `app/trend-detection`, or
   `app/intake` — they still use the old styling. Happy to polish these
   to match the new report/homepage look if you want a consistent pass.
 - `server.js` — the deploy prompt relies on it running unchanged on

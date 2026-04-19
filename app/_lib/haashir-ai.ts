@@ -1,5 +1,5 @@
 /**
- * Sentinel AI — Claude (Anthropic) only. Replaces former Gemini usage.
+ * Haashir AI — Claude (Anthropic) only. Replaces former Gemini usage.
  */
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -73,7 +73,7 @@ export interface AIDecision {
   priority: "HIGH" | "MEDIUM" | "LOW";
 }
 
-const SYSTEM_PROMPT = `You are Sentinel, an AI-powered 911 dispatch assistant. Analyze incoming emergency call transcripts and decide how to handle them.
+const SYSTEM_PROMPT = `You are Haashir, an AI-powered 911 dispatch assistant. Analyze incoming emergency call transcripts and decide how to handle them.
 
 You will receive:
 1. A new call transcript
