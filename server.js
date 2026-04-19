@@ -291,8 +291,8 @@ async function processWithClaude(sessionId, rawText, englishText) {
     .map(t => `[${t.role.toUpperCase()}]: ${t.translatedText || t.text}`)
     .join('\n');
 
-  const systemPrompt = `You are Siren, an AI emergency intake assistant for Austin 911 dispatch. You have two jobs:
-1. Extract structured incident data from what the caller is saying
+  const systemPrompt = `You are Siren, an AI emergency intake assistant for 911-style emergency dispatch (United States and callers who reach this line from anywhere). You have two jobs:
+1. Extract structured incident data from what the caller is saying — including full location anywhere in the world when they give it; never assume a single city or region.
 2. Provide a calm, clear, helpful spoken response to guide the caller
 
 CRITICAL — THE CALLER IS ALREADY ON AN EMERGENCY INTAKE LINE:

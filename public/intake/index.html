@@ -274,7 +274,7 @@ canvas#wave{width:100%;height:52px;border-radius:6px;background:var(--surface2);
     <a href="/" class="nav-home" title="Open dashboard home">⌂ Home</a>
     <div class="topbar-brand">
       <div class="logo">Siren <span class="logo-accent">Voice</span></div>
-      <div class="topbar-tagline">Live 911 intake · Austin metro</div>
+      <div class="topbar-tagline">Live 911 intake · nationwide &amp; international</div>
     </div>
   </div>
   <div class="topbar-mid">
@@ -308,7 +308,7 @@ canvas#wave{width:100%;height:52px;border-radius:6px;background:var(--surface2);
       <div class="hold-badge">
         <div class="hold-icon">📞</div>
         <div class="hold-info">
-          <h3>Austin Emergency Services — 911</h3>
+          <h3>Emergency services — 9-1-1</h3>
           <p id="holdMsg">All operators are currently busy. Please hold.</p>
         </div>
       </div>
@@ -436,9 +436,16 @@ const ELEVEN_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL'; // "Sarah" — calm, clear, prof
 
 function setElevenKey(key) { elevenLabsKey = key; }
 
+/** TTS reads "911" as "nine hundred eleven" — spaced digits sound like "nine one one". */
+function prepareTextForSpeech(text) {
+  if (!text || typeof text !== 'string') return text;
+  return text.replace(/\b911\b/g, '9 1 1');
+}
+
 async function speak(text, onDone) {
-  if (!ttsEnabled || !text || text === lastSpokenText) { if(onDone) onDone(); return; }
-  lastSpokenText = text;
+  const spoken = prepareTextForSpeech(text);
+  if (!ttsEnabled || !text || spoken === lastSpokenText) { if(onDone) onDone(); return; }
+  lastSpokenText = spoken;
 
   // Pause mic immediately so we don't capture anything while waiting for audio
   ttsSpeaking = true;
@@ -446,7 +453,7 @@ async function speak(text, onDone) {
 
   if (!elevenLabsKey) {
     // Fallback to browser TTS if no ElevenLabs key
-    speakBrowser(text, onDone);
+    speakBrowser(spoken, onDone);
     return;
   }
 
@@ -458,7 +465,7 @@ async function speak(text, onDone) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        text: text,
+        text: spoken,
         model_id: 'eleven_turbo_v2',
         voice_settings: { stability: 0.5, similarity_boost: 0.75, speed: 1.1 }
       })
@@ -466,7 +473,7 @@ async function speak(text, onDone) {
 
     if (!res.ok) {
       console.warn('[ElevenLabs] API error, falling back to browser TTS', res.status);
-      speakBrowser(text, onDone);
+      speakBrowser(spoken, onDone);
       return;
     }
 
@@ -487,7 +494,7 @@ async function speak(text, onDone) {
 
   } catch(err) {
     console.warn('[ElevenLabs] Error, falling back:', err.message);
-    speakBrowser(text, onDone);
+    speakBrowser(spoken, onDone);
   }
 }
 
@@ -823,7 +830,9 @@ async function sendTranscriptChunk(delta) {
 }
 
 // ── INCIDENT MAP (geocode + priority colors) ─────────────────────────────────
-const AUSTIN_CENTER = [30.2672, -97.7431];
+/** Default view before pins: US-wide (911 is US-centric); fitBounds zooms to any geocoded location worldwide. */
+const DEFAULT_MAP_CENTER = [39.8283, -98.5795];
+const DEFAULT_MAP_ZOOM = 4;
 
 function normalizePriority(p) {
   if (p == null || p === '') return 'LOW';
@@ -858,7 +867,7 @@ function buildMapPopup(sid, address, pri, incidentId) {
 function initIncidentMap() {
   const el = g('incidentMapEl');
   if (!el || typeof L === 'undefined' || incidentMap) return;
-  incidentMap = L.map(el, { zoomControl: true, scrollWheelZoom: true }).setView(AUSTIN_CENTER, 11);
+  incidentMap = L.map(el, { zoomControl: true, scrollWheelZoom: true }).setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
