@@ -16,19 +16,33 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { v4: uuidv4 } = require('uuid');
 const os = require('os');
 const { exec, execSync } = require('child_process');
+const twilioPkg = require('twilio');
+const awsS3Twilio = require('./lib/aws-s3-twilio');
 
 const dev = process.env.NODE_ENV !== 'production';
 const nextApp = next({ dev, dir: __dirname });
 const handle = nextApp.getRequestHandler();
 
 const ariaApp = express();
+/** Allow split-deploy frontends to call /api/aria and use /ws-aria from another origin. */
+ariaApp.use((req, res, next) => {
+  const allow = (process.env.ARIA_CORS_ORIGIN || '*').trim();
+  res.setHeader('Access-Control-Allow-Origin', allow);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 ariaApp.use(express.json({ limit: '4mb' }));
+ariaApp.use(express.urlencoded({ extended: true }));
 const upload = multer({ dest: os.tmpdir() });
 
 let anthropicKey = process.env.ANTHROPIC_API_KEY || '';
 let anthropic = new Anthropic({ apiKey: anthropicKey });
 
 const sessions = {};
+/** Twilio CallSid → ARIA sessionId (multiple concurrent calls supported). */
+const twilioCallSidToSessionId = Object.create(null);
 let wss;
 
 function broadcast(data) {
@@ -46,6 +60,88 @@ function checkWhisper() {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Public HTTPS base (Twilio webhooks + <Play> URLs). Set PUBLIC_BASE_URL in production. */
+function getPublicBaseUrl(req) {
+  const env = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
+  if (env) return env;
+  const host = req.get('host') || req.headers.host || `localhost:${process.env.PORT || 3000}`;
+  const proto = req.get('x-forwarded-proto') || (String(host).includes('localhost') ? 'http' : 'https');
+  return `${proto}://${host}`;
+}
+
+ariaApp.use((req, res, next) => {
+  const p = (req.url || '').split('?')[0];
+  req.ariaPublicPath = '/api/aria' + p;
+  next();
+});
+
+function twilioSignatureOk(req) {
+  const token = (process.env.TWILIO_AUTH_TOKEN || '').trim();
+  if (!token) return true;
+  const sig = req.headers['x-twilio-signature'];
+  const fullUrl = `${getPublicBaseUrl(req)}${req.ariaPublicPath}`;
+  try {
+    return twilioPkg.validateRequest(token, sig, fullUrl, req.body);
+  } catch {
+    return false;
+  }
+}
+
+function escapeXml(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Full HTTPS URL for Twilio <Play> — ElevenLabs MP3 via S3 (AWS) or local /api/aria/twilio/audio/:id.mp3.
+ * Returns null → use Polly Say fallback.
+ */
+async function buildTwilioTtsPlayUrl(text, publicBase) {
+  const key = (process.env.ELEVENLABS_API_KEY || '').trim();
+  const voiceId = (process.env.ELEVENLABS_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL').trim();
+  if (!key || !text) return null;
+  const token = uuidv4();
+  try {
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': key,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text: text.slice(0, 2500),
+        model_id: 'eleven_turbo_v2',
+        voice_settings: { stability: 0.5, similarity_boost: 0.75, speed: 1.05 }
+      })
+    });
+    if (!res.ok) {
+      console.warn('[TWILIO TTS] ElevenLabs HTTP', res.status);
+      return null;
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+
+    if (awsS3Twilio.isS3Configured()) {
+      const objectKey = `${awsS3Twilio.keyPrefix()}/${token}.mp3`;
+      const signed = await awsS3Twilio.uploadMp3PresignedUrl(buf, objectKey);
+      if (signed) {
+        console.log('[TWILIO TTS] Uploaded to s3://' + awsS3Twilio.bucket() + '/' + objectKey);
+        return signed;
+      }
+    }
+
+    const dir = path.join(__dirname, 'public', 'twilio-audio');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${token}.mp3`), buf);
+    return `${publicBase.replace(/\/$/, '')}/api/aria/twilio/audio/${token}.mp3`;
+  } catch (e) {
+    console.warn('[TWILIO TTS]', e.message);
+    return null;
   }
 }
 
@@ -116,6 +212,7 @@ ariaApp.post('/session/start', (req, res) => {
   sessions[sessionId] = {
     id: sessionId,
     startTime: new Date().toISOString(),
+    channel: 'browser',
     transcript: [],
     ticket: {
       incidentId: 'INC-' + Date.now(),
@@ -133,17 +230,17 @@ ariaApp.post('/session/start', (req, res) => {
     },
     callActive: true
   };
-  broadcast({ type: 'session_start', sessionId, ticket: sessions[sessionId].ticket });
+  broadcast({
+    type: 'session_start',
+    sessionId,
+    channel: 'browser',
+    ticket: sessions[sessionId].ticket
+  });
   console.log(`[SESSION] Started: ${sessionId}`);
   res.json({ sessionId, incidentId: sessions[sessionId].ticket.incidentId });
 });
 
-async function ingestCallerText(sessionId, text) {
-  const trimmed = (text || '').trim();
-  if (!trimmed || trimmed.length < 2 || !sessions[sessionId]) return;
-
-  console.log(`[CALLER TEXT] "${trimmed}"`);
-
+async function translateCallerIfNeeded(sessionId, trimmed) {
   let translatedText = null;
   let isNonEnglish = false;
   const nonLatinPattern = /[\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF\u0600-\u06FF\u4E00-\u9FFF\u3040-\u30FF]/;
@@ -152,7 +249,7 @@ async function ingestCallerText(sessionId, text) {
     isNonEnglish = true;
     const txRes = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 150,
+      max_tokens: 120,
       messages: [{ role: 'user', content: `Detect language and translate to English. Reply ONLY: [Language]|||[Translation]\nText: "${trimmed}"` }]
     });
     const parts = txRes.content[0].text.split('|||');
@@ -160,6 +257,16 @@ async function ingestCallerText(sessionId, text) {
     translatedText = parts[1]?.trim() || trimmed;
     sessions[sessionId].ticket.translationActive = true;
   }
+  return { translatedText, isNonEnglish };
+}
+
+async function ingestCallerText(sessionId, text) {
+  const trimmed = (text || '').trim();
+  if (!trimmed || trimmed.length < 2 || !sessions[sessionId]) return;
+
+  console.log(`[CALLER TEXT] "${trimmed}"`);
+
+  const { translatedText, isNonEnglish } = await translateCallerIfNeeded(sessionId, trimmed);
 
   const entry = {
     role: 'caller',
@@ -169,16 +276,18 @@ async function ingestCallerText(sessionId, text) {
   };
   sessions[sessionId].transcript.push(entry);
 
+  const ch = sessions[sessionId].channel || 'browser';
   broadcast({
     type: 'transcription',
     sessionId,
+    channel: ch,
     text: trimmed,
     translatedText,
     isNonEnglish,
     timestamp: entry.timestamp
   });
 
-  processWithClaude(sessionId, trimmed, translatedText || trimmed).catch(console.error);
+  scheduleClaudeProcessing(sessionId, translatedText || trimmed);
 }
 
 ariaApp.post('/transcript/chunk', async (req, res) => {
@@ -282,12 +391,61 @@ function sanitizeAriaResponse(text) {
   return t;
 }
 
-async function processWithClaude(sessionId, rawText, englishText) {
+function clearClaudeTimers(session) {
+  if (session._claudeIdleTimer) {
+    clearTimeout(session._claudeIdleTimer);
+    session._claudeIdleTimer = null;
+  }
+  if (session._claudeMaxTimer) {
+    clearTimeout(session._claudeMaxTimer);
+    session._claudeMaxTimer = null;
+  }
+}
+
+function flushClaudeBatch(sessionId) {
   const session = sessions[sessionId];
   if (!session) return;
+  clearClaudeTimers(session);
+  const batch = session._claudePending?.trim();
+  session._claudePending = '';
+  session._claudeBatchStart = null;
+  if (!batch) return;
+
+  if (!session._claudeQueue) session._claudeQueue = Promise.resolve();
+  session._claudeQueue = session._claudeQueue
+    .then(() => processWithClaude(sessionId, batch, batch))
+    .catch((err) => console.error('[CLAUDE]', err.message));
+}
+
+/**
+ * Batches rapid HTTP chunks; flushes after a short pause (low latency when you stop talking)
+ * or ~520ms max wait (still get updates during a long uninterrupted sentence).
+ */
+function scheduleClaudeProcessing(sessionId, englishText) {
+  const session = sessions[sessionId];
+  if (!session) return;
+  const piece = (englishText || '').trim();
+  if (!piece) return;
+
+  session._claudePending = session._claudePending
+    ? `${session._claudePending} ${piece}`
+    : piece;
+
+  if (!session._claudeBatchStart) {
+    session._claudeBatchStart = Date.now();
+    session._claudeMaxTimer = setTimeout(() => flushClaudeBatch(sessionId), 520);
+  }
+
+  if (session._claudeIdleTimer) clearTimeout(session._claudeIdleTimer);
+  session._claudeIdleTimer = setTimeout(() => flushClaudeBatch(sessionId), 150);
+}
+
+async function processWithClaude(sessionId, rawText, englishText) {
+  const session = sessions[sessionId];
+  if (!session) return null;
 
   const transcriptHistory = session.transcript
-    .slice(-10)
+    .slice(-8)
     .map(t => `[${t.role.toUpperCase()}]: ${t.translatedText || t.text}`)
     .join('\n');
 
@@ -337,7 +495,7 @@ All scores are 0-100. timelineStep is 0-4 (0=call received, 1=location found, 2=
   try {
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 800,
+      max_tokens: 512,
       system: systemPrompt,
       messages: [{ role: 'user', content: `New caller statement: "${englishText}"` }]
     });
@@ -368,9 +526,13 @@ All scores are 0-100. timelineStep is 0-4 (0=call received, 1=location found, 2=
       });
     }
 
+    const ch = session.channel || 'browser';
     broadcast({
       type: 'ai_analysis',
       sessionId,
+      channel: ch,
+      twilioCallSid: session.twilioCallSid || undefined,
+      from: session.from || undefined,
       ariaResponse: parsed.ariaResponse,
       ticket: session.ticket,
       severityScores: parsed.severityScores,
@@ -383,10 +545,54 @@ All scores are 0-100. timelineStep is 0-4 (0=call received, 1=location found, 2=
 
     console.log(`[CLAUDE] Type: ${session.ticket.type} | Priority: ${session.ticket.priority}`);
 
+    return parsed;
   } catch (err) {
     console.error('[CLAUDE ERROR]', err.message);
-    broadcast({ type: 'error', sessionId, message: 'AI processing error: ' + err.message });
+    broadcast({
+      type: 'error',
+      sessionId,
+      channel: sessions[sessionId]?.channel || 'browser',
+      message: 'AI processing error: ' + err.message
+    });
+    return null;
   }
+}
+
+/** Phone: one utterance → await Claude → spoken reply (used by Twilio webhooks). */
+async function ingestPhoneTurn(sessionId, text) {
+  const trimmed = (text || '').trim();
+  if (!trimmed || trimmed.length < 2 || !sessions[sessionId]) {
+    return "I'm listening. What is your emergency?";
+  }
+
+  const { translatedText, isNonEnglish } = await translateCallerIfNeeded(sessionId, trimmed);
+
+  const entry = {
+    role: 'caller',
+    text: trimmed,
+    translatedText,
+    timestamp: new Date().toISOString()
+  };
+  sessions[sessionId].transcript.push(entry);
+
+  const ch = sessions[sessionId].channel || 'phone';
+  broadcast({
+    type: 'transcription',
+    sessionId,
+    channel: ch,
+    twilioCallSid: sessions[sessionId].twilioCallSid,
+    from: sessions[sessionId].from,
+    text: trimmed,
+    translatedText,
+    isNonEnglish,
+    timestamp: entry.timestamp
+  });
+
+  const parsed = await processWithClaude(sessionId, trimmed, translatedText || trimmed);
+  const reply =
+    parsed?.ariaResponse ||
+    "Stay on the line — I'm updating dispatch with what you've told me.";
+  return sanitizeAriaResponse(reply) || reply;
 }
 
 ariaApp.post('/report/generate', async (req, res) => {
@@ -458,12 +664,177 @@ Be precise and professional. This will be used by dispatchers and first responde
 
 ariaApp.post('/session/end', (req, res) => {
   const { sessionId } = req.body;
-  if (sessions[sessionId]) {
-    sessions[sessionId].callActive = false;
+  const session = sessions[sessionId];
+  if (session) {
+    clearClaudeTimers(session);
+    const flush = session._claudePending?.trim();
+    session._claudePending = '';
+    session._claudeBatchStart = null;
+    if (flush) {
+      if (!session._claudeQueue) session._claudeQueue = Promise.resolve();
+      session._claudeQueue = session._claudeQueue
+        .then(() => processWithClaude(sessionId, flush, flush))
+        .catch((err) => console.error('[CLAUDE]', err.message));
+    }
+    session.callActive = false;
     broadcast({ type: 'session_end', sessionId });
     console.log(`[SESSION] Ended: ${sessionId}`);
   }
   res.json({ ok: true });
+});
+
+// ─── Twilio voice ↔ Siren (Gather + speech recognition; ElevenLabs or Polly TTS) ─
+/** GET — paste this URL in a browser to verify routing + see exact webhook URLs (no Twilio call needed). */
+ariaApp.get('/twilio/ping', (req, res) => {
+  const base = getPublicBaseUrl(req);
+  res.json({
+    ok: true,
+    message: 'Siren Twilio hooks are mounted. Point Twilio Voice POST to voiceWebhook, then call your number.',
+    publicBaseUrl: base,
+    voiceWebhook: `${base}/api/aria/twilio/voice`,
+    gatherWebhook: `${base}/api/aria/twilio/gather`,
+    callStatusWebhook: `${base}/api/aria/twilio/call-status`,
+    signatureCheck: !!(process.env.TWILIO_AUTH_TOKEN || '').trim(),
+    awsRegion: process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || null,
+    awsS3TwilioBucket: awsS3Twilio.isS3Configured() ? awsS3Twilio.bucket() : null,
+    twilioTtsMode: awsS3Twilio.isS3Configured() ? 's3-presigned' : 'local-or-public-base',
+    note:
+      'If POST tests return 403, Twilio signature failed: use real Twilio POST or temporarily unset TWILIO_AUTH_TOKEN for local curl only.'
+  });
+});
+
+ariaApp.post('/twilio/voice', async (req, res) => {
+  if (!twilioSignatureOk(req)) return res.status(403).send('Forbidden');
+  const callSid = req.body.CallSid;
+  const from = req.body.From || '';
+  if (!callSid) return res.status(400).send('Missing CallSid');
+
+  let sessionId = twilioCallSidToSessionId[callSid];
+  if (!sessionId || !sessions[sessionId]) {
+    sessionId = uuidv4();
+    sessions[sessionId] = {
+      id: sessionId,
+      startTime: new Date().toISOString(),
+      channel: 'phone',
+      twilioCallSid: callSid,
+      from,
+      transcript: [],
+      ticket: {
+        incidentId: 'INC-' + Date.now(),
+        priority: null,
+        type: null,
+        location: null,
+        victims: null,
+        injuries: null,
+        hazards: null,
+        callerName: null,
+        medicalHistory: null,
+        dispatchStatus: 'INTAKE IN PROGRESS',
+        language: null,
+        translationActive: false
+      },
+      callActive: true
+    };
+    twilioCallSidToSessionId[callSid] = sessionId;
+    broadcast({
+      type: 'session_start',
+      sessionId,
+      channel: 'phone',
+      twilioCallSid: callSid,
+      from,
+      ticket: sessions[sessionId].ticket
+    });
+    console.log(`[TWILIO] Incoming call ${callSid} → session ${sessionId.slice(0, 8)}`);
+  }
+
+  const base = getPublicBaseUrl(req);
+  const gatherUrl = `${base}/api/aria/twilio/gather`;
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech" action="${escapeXml(gatherUrl)}" method="POST" speechTimeout="auto" language="en-US">
+    <Say voice="Polly.Matthew">Siren here. What is your emergency?</Say>
+  </Gather>
+  <Say voice="Polly.Matthew">We did not hear you. Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+  res.type('text/xml');
+  res.send(xml);
+});
+
+ariaApp.post('/twilio/gather', async (req, res) => {
+  if (!twilioSignatureOk(req)) return res.status(403).send('Forbidden');
+  const callSid = req.body.CallSid;
+  const speech = (req.body.SpeechResult || '').trim();
+  const sessionId = twilioCallSidToSessionId[callSid];
+  const base = getPublicBaseUrl(req);
+  const gatherUrl = `${base}/api/aria/twilio/gather`;
+
+  if (!sessionId || !sessions[sessionId]) {
+    const errXml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Matthew">Session error. Goodbye.</Say><Hangup/></Response>`;
+    res.type('text/xml');
+    return res.send(errXml);
+  }
+
+  let spoken = "I didn't catch that. What is your emergency?";
+  if (speech.length >= 2) {
+    try {
+      spoken = await ingestPhoneTurn(sessionId, speech);
+    } catch (e) {
+      console.error('[TWILIO GATHER]', e);
+      spoken = 'Sorry, something went wrong. Please say that again.';
+    }
+  }
+
+  const playAudioUrl = await buildTwilioTtsPlayUrl(spoken, base);
+  let playPart;
+  if (playAudioUrl) {
+    playPart = `<Play>${escapeXml(playAudioUrl)}</Play>`;
+  } else {
+    playPart = `<Say voice="Polly.Matthew">${escapeXml(spoken.slice(0, 4000))}</Say>`;
+  }
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  ${playPart}
+  <Gather input="speech" action="${escapeXml(gatherUrl)}" method="POST" speechTimeout="auto" language="en-US"></Gather>
+  <Say voice="Polly.Matthew">Goodbye.</Say>
+  <Hangup/>
+</Response>`;
+  res.type('text/xml');
+  res.send(xml);
+});
+
+ariaApp.get('/twilio/audio/:file', (req, res) => {
+  const raw = String(req.params.file || '');
+  const m = raw.match(/^([a-f0-9-]{36})\.mp3$/i);
+  if (!m) return res.status(400).end('Bad file');
+  const fp = path.join(__dirname, 'public', 'twilio-audio', `${m[1]}.mp3`);
+  if (!fs.existsSync(fp)) return res.status(404).end();
+  res.setHeader('Content-Type', 'audio/mpeg');
+  fs.createReadStream(fp).pipe(res);
+});
+
+/** Optional: set Twilio number "Status callback" to this URL so sessions end when the call completes. */
+ariaApp.post('/twilio/call-status', (req, res) => {
+  if (!twilioSignatureOk(req)) return res.status(403).send('Forbidden');
+  const callSid = req.body.CallSid;
+  const status = req.body.CallStatus || '';
+  if (['completed', 'busy', 'failed', 'no-answer', 'canceled'].includes(status)) {
+    const sessionId = twilioCallSidToSessionId[callSid];
+    if (sessionId && sessions[sessionId]) {
+      sessions[sessionId].callActive = false;
+      broadcast({
+        type: 'session_end',
+        sessionId,
+        channel: 'phone',
+        twilioCallSid: callSid
+      });
+      delete twilioCallSidToSessionId[callSid];
+      console.log(`[TWILIO] Call ended ${callSid}`);
+    }
+  }
+  res.type('text/plain');
+  res.send('OK');
 });
 
 nextApp.prepare().then(() => {
@@ -474,6 +845,12 @@ nextApp.prepare().then(() => {
     try {
       if (pathname === '/intake' || pathname === '/intake/') {
         const htmlPath = path.join(__dirname, 'public', 'intake', 'index.html');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return fs.createReadStream(htmlPath).pipe(res);
+      }
+
+      if (pathname === '/dispatch-live' || pathname === '/dispatch-live/') {
+        const htmlPath = path.join(__dirname, 'public', 'dispatch-live.html');
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return fs.createReadStream(htmlPath).pipe(res);
       }
@@ -509,6 +886,8 @@ nextApp.prepare().then(() => {
 ║  http://localhost:${PORT}                             ║
 ║    • Situations & tools: /                           ║
 ║    • Voice intake:       /intake                     ║
+║    • Live dispatch:      /dispatch-live              ║
+║    • Twilio voice POST:  /api/aria/twilio/voice      ║
 ║  Whisper (optional): ${whisperOk ? 'yes' : 'no'}                          ║
 ╚══════════════════════════════════════════════════════╝
 `);

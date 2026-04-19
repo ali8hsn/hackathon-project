@@ -746,7 +746,7 @@ async function startCall() {
   dataArray = new Uint8Array(analyser.frequencyBinCount);
   src.connect(analyser);
   startLiveWave();
-  const GREETING = 'This is Siren, your 911 AI intake assistant. All operators are currently busy. Please describe your emergency and I will alert a dispatcher immediately.';
+  const GREETING = "Siren here — what's your emergency?";
   addSys(`Session ${sessionId.slice(0,8)} — Siren online — speaking greeting...`);
   hideCallerLiveInterim();
   addLine('aria', GREETING, null);
@@ -811,7 +811,7 @@ function startSpeechRecognition() {
       pendingTranscriptDelta = '';
       void sendTranscriptChunk(delta);
     }
-  }, 1000);
+  }, 280);
 }
 
 async function sendTranscriptChunk(delta) {
@@ -882,11 +882,19 @@ function initIncidentMap() {
   }
 }
 
+/** Smooth camera move — looks better than an instant jump when a location appears. */
 function mapFitAll() {
   if (!incidentMap || mapPins.size === 0) return;
   const bounds = L.latLngBounds([]);
   mapPins.forEach((m) => { bounds.extend(m.getLatLng()); });
-  if (bounds.isValid()) incidentMap.fitBounds(bounds.pad(0.18));
+  if (!bounds.isValid()) return;
+  const padded = bounds.pad(0.18);
+  const flyOpts = { duration: 2.6, easeLinearity: 0.2, maxZoom: 17 };
+  if (typeof incidentMap.flyToBounds === 'function') {
+    incidentMap.flyToBounds(padded, flyOpts);
+  } else {
+    incidentMap.fitBounds(padded);
+  }
 }
 
 function updateMapLegend() {
@@ -958,7 +966,7 @@ function scheduleGeocodePin(sid, address, pri, incidentId) {
   mapGeocodeTimers[sid] = setTimeout(() => {
     delete mapGeocodeTimers[sid];
     void placeOrUpdatePin(sid, address, pri, incidentId);
-  }, 450);
+  }, 300);
 }
 
 function syncMapFromTicket(ticket, forSessionId) {

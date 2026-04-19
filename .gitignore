@@ -11,3 +11,4 @@ node_modules/
 *.tsbuildinfo
 npm-debug.log*
 coverage/
+public/twilio-audio/
