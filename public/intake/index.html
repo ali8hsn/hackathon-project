@@ -4,17 +4,22 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Siren — Voice intake & dispatch</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Instrument+Serif&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>
 :root {
-  /* Siren — one shell for voice intake + dispatch tools */
-  --red:#E8281A;--red-dark:#B01F13;--red-dim:rgba(232,40,26,0.12);
-  --amber:#F59E0B;--green:#10B981;--blue:#3B82F6;
-  --bg:#0A0A0B;--surface:#111113;--surface2:#18181B;--surface3:#222227;
-  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
-  --text:#F4F4F5;--text-muted:#71717A;--text-dim:#3F3F46;
-  --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--display:'Syne',sans-serif;
+  /* Siren intake — Pass 2 violet/cream reskin.
+     The original red/black palette is preserved as `--red*` so individual
+     accents (active-call halo, mass-event banner, transcript LIVE pill)
+     still pop against the cream background. Surfaces flip to cream/white;
+     accents flip to violet to match the homepage hero. */
+  --red:#7C3AED;--red-dark:#5B21B6;--red-dim:rgba(124,58,237,0.10);
+  --amber:#D97706;--green:#10B981;--blue:#3B82F6;
+  --bg:#FAF7F2;--surface:#FFFFFF;--surface2:#F5F3FF;--surface3:#EDE9FE;
+  --border:rgba(15,15,30,0.08);--border2:rgba(124,58,237,0.18);
+  --text:#15121F;--text-muted:rgba(15,15,30,0.55);--text-dim:rgba(15,15,30,0.30);
+  --mono:'IBM Plex Mono',monospace;--sans:'Plus Jakarta Sans','IBM Plex Sans',sans-serif;--display:'Plus Jakarta Sans','Syne',sans-serif;
+  --serif:'Instrument Serif',Georgia,serif;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;}

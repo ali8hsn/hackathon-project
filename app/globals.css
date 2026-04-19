@@ -87,9 +87,87 @@
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
+/* ── Phase 6 — Theme system ────────────────────────────────────────────────
+   The homepage is editorial cream + violet + ink. We extend that palette to
+   every other Next.js page via CSS variables so the Settings panel's
+   light/dark toggle (sets .theme-light / .theme-dark on <html>) flips
+   everything in one place. The dispatch console (#console section in
+   app/page.tsx) keeps its own inline-styled deep ink background so it
+   stays dark in either mode — exactly what dispatchers expect at 3am.
+
+   --siren-bg     page background
+   --siren-card   panel / card background
+   --siren-fg     primary text
+   --siren-muted  secondary text
+   --siren-border subtle dividers
+   --siren-accent violet brand                                           */
+:root {
+  --siren-bg: #faf7f2;
+  --siren-bg-soft: #f4efe7;
+  --siren-card: #ffffff;
+  --siren-card-soft: rgba(124, 58, 237, 0.04);
+  --siren-fg: #0a0a0f;
+  --siren-fg-strong: #15121f;
+  --siren-muted: rgba(15, 15, 30, 0.55);
+  --siren-border: rgba(15, 15, 30, 0.10);
+  --siren-border-strong: rgba(15, 15, 30, 0.18);
+  --siren-accent: #7c3aed;
+  --siren-accent-soft: #ddd6fe;
+  --siren-accent-on: #ffffff;
+}
+
+html.theme-dark,
+html:not(.theme-light) {
+  --siren-bg: #0a0a0f;
+  --siren-bg-soft: #14141d;
+  --siren-card: #181822;
+  --siren-card-soft: rgba(167, 139, 250, 0.07);
+  --siren-fg: #e8e6ef;
+  --siren-fg-strong: #ffffff;
+  --siren-muted: rgba(232, 230, 239, 0.55);
+  --siren-border: rgba(255, 255, 255, 0.08);
+  --siren-border-strong: rgba(167, 139, 250, 0.20);
+  --siren-accent: #a78bfa;
+  --siren-accent-soft: rgba(167, 139, 250, 0.18);
+  --siren-accent-on: #0a0a0f;
+}
+
+/* Light-mode override of the legacy Tailwind tokens.
+   Every page that uses `bg-surface-low`, `text-on-surface`, `bg-surface`, etc.
+   automatically flips to the cream/violet palette without any JSX edits.
+   The dispatch console (`#console` in app/page.tsx) is intentionally
+   inline-styled with its own dark ink so it stays dark in either mode. */
+html.theme-light {
+  --color-bg: #faf7f2;
+  --color-surface-lowest: #faf7f2;
+  --color-surface-low: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-high: #f4efe7;
+  --color-surface-highest: #ede9fe;
+  --color-surface-bright: #f5f3ff;
+
+  --color-on-surface: #15121f;
+  --color-on-surface-variant: rgba(15, 15, 30, 0.55);
+  --color-outline: #94a3b8;
+  --color-outline-variant: rgba(15, 15, 30, 0.10);
+  --color-inverse-surface: #15121f;
+
+  --color-primary: #7c3aed;
+  --color-primary-container: rgba(124, 58, 237, 0.10);
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #4c1d95;
+  --color-primary-dim: #7c3aed;
+
+  --color-ai: #7c3aed;
+  --color-ai-dim: rgba(124, 58, 237, 0.10);
+}
+
 /* ── Base ─────────────────────────────────────────────────────────────── */
 html {
   color-scheme: dark;
+}
+html.theme-light {
+  color-scheme: light;
 }
 
 body {
@@ -98,6 +176,48 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Phase 6 — Reusable card surfaces for non-console pages ───────────────
+   Pages opt-in by wrapping their root in `.siren-page`. The dispatch console
+   (app/page.tsx #console section) deliberately does NOT use this — it keeps
+   its inline ink background so it stays dark even in light mode. */
+.siren-page {
+  background: var(--siren-bg);
+  color: var(--siren-fg);
+  min-height: 100vh;
+  transition: background 200ms ease, color 200ms ease;
+}
+.siren-card {
+  background: var(--siren-card);
+  border: 1px solid var(--siren-border);
+  color: var(--siren-fg);
+  border-radius: 16px;
+}
+.siren-card-soft {
+  background: var(--siren-card-soft);
+  border: 1px solid var(--siren-border);
+  color: var(--siren-fg);
+  border-radius: 16px;
+}
+.siren-muted-text {
+  color: var(--siren-muted);
+}
+.siren-accent-pill {
+  background: var(--siren-accent-soft);
+  color: var(--siren-accent);
+  border: 1px solid color-mix(in srgb, var(--siren-accent) 30%, transparent);
+}
+.siren-accent-btn {
+  background: var(--siren-accent);
+  color: var(--siren-accent-on);
+  border: 1px solid color-mix(in srgb, var(--siren-accent) 70%, transparent);
+}
+.siren-accent-btn:hover {
+  filter: brightness(1.05);
+}
+.siren-divider {
+  border-color: var(--siren-border);
 }
 
 ::selection {
