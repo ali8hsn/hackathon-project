@@ -11,7 +11,7 @@
 
 - Project name is "Siren" — operator-facing 911 dispatch console for callers on hold; live at `https://3-225-183-122.sslip.io`.
 - Production: AWS EC2 (Ubuntu 22.04, t3.small, us-east-1a, Elastic IP `3.225.183.122`); Nginx → Node 20 + PM2 on port 3000; Let's Encrypt TLS. App at `/opt/siren/app` (owner `siren`); env at `/etc/siren/siren.env` (mode 640, `root:siren`) symlinked to `app/.env`; SSH as `ubuntu` with `~/.ssh/siren-deploy.pem`.
-- MongoDB Atlas database name MUST remain `sentinel` despite the Haashir rebrand to keep existing live incident data accessible — document this exception in `.env.example`, `setup-db.ts`, `DEPLOY_NOTES.md`.
+- MongoDB Atlas database name is `siren` (renamed from legacy `sentinel` in commit b624ddc — full rebrand). Connection details live in `/etc/siren/siren.env` via `MONGODB_URI` + `MONGODB_DB_NAME=siren`.
 - AI providers: Anthropic Claude for classification + report generation (`app/_lib/haashir-ai.ts`); Gemini `gemini-2.5-flash-lite` for 1–10 severity scoring (`app/_lib/gemini-severity.ts`, persisted as `severity_score`, ratchet-up only on UPDATE); ElevenLabs for TTS on `/intake`.
 - Live phone-call ingest uses Twilio webhooks routed through an ngrok tunnel set via `PUBLIC_BASE_URL`; recorded audio is uploaded to S3 bucket `amzn-siren` (`AWS_S3_TWILIO_BUCKET`); auth via `TWILIO_AUTH_TOKEN`.
 - Build/deploy gotchas: run full `npm ci` (NOT `--omit=dev`) before `npm run build` because `@tailwindcss/postcss` is a devDependency; always `rm -rf .next` after rsync (Turbopack dev cache breaks the production build).
@@ -19,6 +19,6 @@
 - Co-developer "Jawaad" pushes to `main` on the same GitHub repo; before each AWS redeploy pull/merge his latest commits and integrate his changes (esp. the Twilio phone bridge).
 - An auto-commit hook batches edits, so `git status` may look clean immediately after edits — verify via `git log` rather than assuming changes were lost.
 - AWS firewall: security group `siren-sg` (`sg-0afefd751b50b5539`) and host UFW must both allow TCP 22/80/443/3000; open both layers when exposing new ports.
-- Map conventions in `app/_components/MapView.tsx`: single pin → `flyTo` zoom 14.5; multiple pins → `fitBounds` padding 60 maxZoom 14; if exactly one pin is `active`, fly to it instead of fitting bounds. Rescore existing incidents via `scripts/backfill-severity.mjs` (env: `MONGODB_URI`, `MONGODB_DB_NAME=sentinel`, `GEMINI_API_KEY`).
+- Map conventions in `app/_components/MapView.tsx`: single pin → `flyTo` zoom 14.5; multiple pins → `fitBounds` padding 60 maxZoom 14; if exactly one pin is `active`, fly to it instead of fitting bounds. Rescore existing incidents via `scripts/backfill-severity.mjs` (env: `MONGODB_URI`, `MONGODB_DB_NAME=siren`, `GEMINI_API_KEY`).
 - Branding lock: homepage hero tagline is "Every 911 call, treated with the same care." Dispatch recommendation must render structured (Priority + address header; sections: Immediate Dispatch / Bystander Instructions / Responder Preparation) with copy buttons and severity pills — never a single paragraph wall-of-text.
 - API shape: `ingestTranscript` returns `new_incident_id` for CREATE and `target_id` for UPDATE/FLAG_FOR_REVIEW (NOT `incident.id` or `id`). Anything that links to `/situation-sheet/<id>` after POST `/api/incidents` must read `new_incident_id || target_id`.
