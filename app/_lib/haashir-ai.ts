@@ -423,7 +423,13 @@ ADDRESS: <single line — full street address or best-known location>
 Rules: Use only the section headers above. PRIORITY and ADDRESS lines are required. Each section needs 2-4 bullets that start with a verb (Dispatch, Stage, Notify, Instruct, Establish, Confirm, Brief). Max 12 words per bullet. No prose paragraphs anywhere in DISPATCH RECOMMENDATION. No speculation. Facts only.`;
 
   const text = await claudeText(
-    "You are an emergency dispatch AI assistant. Write clear, factual, actionable reports. No speculation. Use markdown formatting with ** for bold headers.",
+    "You are an emergency dispatch AI assistant. Write clear, factual, actionable reports. " +
+      "Output ONLY the requested markdown sections in the EXACT order requested. " +
+      "Inside DISPATCH RECOMMENDATION you MUST emit the literal lines `PRIORITY:` and `ADDRESS:` " +
+      "followed by the three `### IMMEDIATE DISPATCH`, `### BYSTANDER INSTRUCTIONS`, " +
+      "`### RESPONDER PREPARATION` sub-headings, each with bullet lines starting with `- `. " +
+      "NEVER collapse the dispatch recommendation into a prose paragraph. " +
+      "Each bullet starts with a verb and is at most 12 words.",
     prompt,
     4096
   );

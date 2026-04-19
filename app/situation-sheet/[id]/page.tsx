@@ -403,6 +403,21 @@ function extractDispatchRec(report: string): DispatchRec | null {
 
   const paragraph = proseFallback.join(" ").trim();
   if (!paragraph) return null;
+
+  // Even when the model regresses to a prose paragraph, surface it as the
+  // structured card by splitting on sentences and bucketing by verb/keyword.
+  const synth = synthesizeStructuredFromProse(paragraph);
+  if (synth) {
+    return {
+      priority: synth.priority,
+      address: synth.address,
+      immediate: synth.immediate,
+      bystander: synth.bystander,
+      responder: synth.responder,
+      legacyParagraph: null,
+    };
+  }
+
   return {
     priority: null,
     address: null,
@@ -411,6 +426,103 @@ function extractDispatchRec(report: string): DispatchRec | null {
     responder: [],
     legacyParagraph: paragraph,
   };
+}
+
+// Deterministic last-resort splitter: turn a free-prose dispatch recommendation
+// into the structured {priority, address, immediate, bystander, responder} shape
+// the new card expects. Used when the model regresses or when an older saved
+// report predates the structured prompt.
+function synthesizeStructuredFromProse(prose: string): {
+  priority: string | null;
+  address: string | null;
+  immediate: string[];
+  bystander: string[];
+  responder: string[];
+} | null {
+  if (!prose) return null;
+
+  let priority: string | null = null;
+  const pMatch = prose.match(/\b(P\s*[1-4]|Priority\s+[1-4])\b/i);
+  if (pMatch) {
+    const num = pMatch[0].match(/[1-4]/);
+    if (num) priority = `P${num[0]}`;
+  }
+  if (!priority) {
+    if (/life[-\s]threatening|critical|immediate threat/i.test(prose)) priority = "P1";
+    else if (/urgent|serious/i.test(prose)) priority = "P2";
+  }
+
+  let address: string | null = null;
+  const addrMatch = prose.match(
+    /\b(?:to|at)\s+([0-9][^.;,]*?(?:Street|St\.?|Avenue|Ave\.?|Road|Rd\.?|Boulevard|Blvd\.?|Drive|Dr\.?|Lane|Ln\.?|Way|Place|Pl\.?|Court|Ct\.?|Highway|Hwy\.?|Parkway|Pkwy\.?)[^.;]*)/i
+  );
+  if (addrMatch) {
+    address = addrMatch[1]
+      .replace(/\s+as\s+priority.*$/i, "")
+      .replace(/[,.\s]+$/g, "")
+      .trim();
+  }
+
+  const sentences = prose
+    .split(/(?<=[.!?])\s+(?=[A-Z(])/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const immediate: string[] = [];
+  const bystander: string[] = [];
+  const responder: string[] = [];
+
+  for (const raw of sentences) {
+    const s = raw.replace(/\s+/g, " ").trim();
+    if (!s) continue;
+    const lower = s.toLowerCase();
+
+    if (
+      /\b(instruct|tell|advise|have)\s+(bystander|caller|witness|family|patient)/i.test(s) ||
+      /\bbystanders?\b/i.test(s) ||
+      /\bcallers?\s+(should|to)\b/i.test(s)
+    ) {
+      bystander.push(s);
+      continue;
+    }
+
+    if (
+      /\b(first responders|responders should|prepare for|stage|brief|establish|identify staging|access to|ready for|set up)/i.test(
+        lower
+      )
+    ) {
+      responder.push(s);
+      continue;
+    }
+
+    if (/^(dispatch|send|deploy|page|roll|launch|notify)/i.test(s)) {
+      immediate.push(s);
+      continue;
+    }
+
+    immediate.push(s);
+  }
+
+  // Trim each bucket to a reasonable length and shorten over-long sentences.
+  const tidy = (arr: string[]) =>
+    arr
+      .map((s) => s.replace(/\s+/g, " ").trim())
+      .filter((s) => s.length > 0)
+      .slice(0, 4);
+
+  const out = {
+    priority,
+    address,
+    immediate: tidy(immediate),
+    bystander: tidy(bystander),
+    responder: tidy(responder),
+  };
+
+  if (out.immediate.length + out.bystander.length + out.responder.length === 0) {
+    return null;
+  }
+
+  return out;
 }
 
 // ─── Helper: strip markdown for plain-text copy ─────────────────────────────

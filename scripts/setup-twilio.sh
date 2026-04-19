@@ -1,92 +1,37 @@
 #!/bin/bash
 # ============================================================
-# Haashir — Twilio + Ngrok Setup Helper
+# Siren — Twilio webhook configurator (production)
 # ============================================================
-# This script:
-#   1. Starts ngrok to tunnel your localhost:3000
-#   2. Shows you the webhook URL to configure in Twilio
+# Re-points every Twilio number on the configured account at the AWS host
+# defined by PUBLIC_BASE_URL. Use this any time the AWS hostname changes
+# or you suspect a number is still pointing at an old ngrok URL.
 #
-# Prerequisites:
-#   - ngrok installed (brew install ngrok)
-#   - ngrok authenticated (ngrok config add-authtoken YOUR_TOKEN)
-#   - Next.js dev server running (npm run dev)
+# Required env (or .env beside the project root):
+#   TWILIO_ACCOUNT_SID
+#   TWILIO_AUTH_TOKEN
+#   PUBLIC_BASE_URL    e.g. https://3-225-183-122.sslip.io
 #
-# Usage:
-#   chmod +x scripts/setup-twilio.sh
+# Examples:
 #   ./scripts/setup-twilio.sh
+#   ./scripts/setup-twilio.sh --dry-run
 # ============================================================
 
 set -e
 
-PORT=${1:-3000}
+cd "$(dirname "$0")/.."
 
-echo "═══════════════════════════════════════════════════════════════"
-echo "🛡️  Haashir — Twilio + Ngrok Setup"
-echo "═══════════════════════════════════════════════════════════════"
-echo ""
+if [ -z "$PUBLIC_BASE_URL" ]; then
+  if [ -f .env ] && grep -q '^PUBLIC_BASE_URL=' .env; then
+    export PUBLIC_BASE_URL=$(grep '^PUBLIC_BASE_URL=' .env | head -1 | cut -d= -f2-)
+  fi
+fi
 
-# Check if ngrok is installed
-if ! command -v ngrok &> /dev/null; then
-  echo "❌ ngrok not found. Install with: brew install ngrok"
+if [ -z "$PUBLIC_BASE_URL" ]; then
+  echo "✖ PUBLIC_BASE_URL is not set."
+  echo "  export PUBLIC_BASE_URL=https://3-225-183-122.sslip.io"
+  echo "  (or add it to .env), then re-run."
   exit 1
 fi
 
-# Check if dev server is running
-if ! curl -s http://localhost:$PORT > /dev/null 2>&1; then
-  echo "⚠️  Next.js dev server doesn't seem to be running on port $PORT"
-  echo "   Start it with: npm run dev"
-  echo "   Then re-run this script."
-  echo ""
-fi
-
-echo "🔗 Starting ngrok tunnel on port $PORT..."
-echo ""
-
-# Start ngrok in the background and wait for it to be ready
-ngrok http $PORT --log=stdout > /tmp/ngrok-haashir.log 2>&1 &
-NGROK_PID=$!
-
-# Wait for ngrok to start
-sleep 3
-
-# Get the public URL from ngrok's API
-NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"https://[^"]*' | head -1 | cut -d'"' -f4)
-
-if [ -z "$NGROK_URL" ]; then
-  echo "❌ Failed to get ngrok URL. Check if ngrok is authenticated:"
-  echo "   ngrok config add-authtoken YOUR_TOKEN"
-  kill $NGROK_PID 2>/dev/null
-  exit 1
-fi
-
-VOICE_WEBHOOK="${NGROK_URL}/api/twilio/voice"
-
-echo "═══════════════════════════════════════════════════════════════"
-echo "✅ Ngrok tunnel active!"
-echo ""
-echo "   Public URL:     $NGROK_URL"
-echo "   Voice Webhook:  $VOICE_WEBHOOK"
-echo ""
-echo "═══════════════════════════════════════════════════════════════"
-echo ""
-echo "📋 TWILIO CONFIGURATION STEPS:"
-echo ""
-echo "   1. Go to: https://console.twilio.com/us1/develop/phone-numbers"
-echo "   2. Click on your phone number"
-echo "   3. Under 'Voice Configuration':"
-echo "      • Set 'A call comes in' → Webhook"
-echo "      • URL: $VOICE_WEBHOOK"
-echo "      • Method: HTTP POST"
-echo "   4. Click 'Save configuration'"
-echo ""
-echo "═══════════════════════════════════════════════════════════════"
-echo ""
-echo "🎯 TEST IT:"
-echo "   Call your Twilio number and describe an emergency."
-echo "   The incident should appear on the dashboard within ~30 seconds."
-echo ""
-echo "Press Ctrl+C to stop ngrok..."
-echo ""
-
-# Keep ngrok running in foreground
-wait $NGROK_PID
+echo "▸ Pointing Twilio numbers at $PUBLIC_BASE_URL/api/aria/twilio/voice"
+node scripts/configure-twilio-webhook.mjs "$@"
