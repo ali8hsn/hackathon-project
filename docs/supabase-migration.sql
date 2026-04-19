@@ -1,5 +1,5 @@
 -- ============================================================
--- Sentinel — Supabase Migration
+-- Haashir — Supabase Migration (legacy — current app uses MongoDB, see docs/design-doc.md)
 -- Run this via the setup script: bun run db:setup
 -- ============================================================
 
