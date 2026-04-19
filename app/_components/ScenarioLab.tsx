@@ -183,8 +183,17 @@ export default function ScenarioLab({
         throw new Error(`HTTP ${res.status}: ${txt.slice(0, 160)}`);
       }
       const data = await res.json();
+      // ingestTranscript returns either `new_incident_id` (CREATE) or
+      // `target_id` (UPDATE/FLAG_FOR_REVIEW into an existing incident).
+      // Fall back to the older guesses last so we still link if the API
+      // shape changes again.
       const incidentId =
-        data?.incident?.id || data?.id || data?.incidentId || null;
+        data?.new_incident_id ||
+        data?.target_id ||
+        data?.incident?.id ||
+        data?.id ||
+        data?.incidentId ||
+        null;
       setLast({
         status: "ok",
         incidentId,

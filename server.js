@@ -225,7 +225,14 @@ async function autoMergeCluster(cluster) {
       return;
     }
     const ingest = await ingestRes.json();
-    const newIncidentId = ingest?.incident?.id || ingest?.id || null;
+    // ingestTranscript returns `new_incident_id` for CREATE and `target_id`
+    // for UPDATE/FLAG_FOR_REVIEW — try both before falling back.
+    const newIncidentId =
+      ingest?.new_incident_id ||
+      ingest?.target_id ||
+      ingest?.incident?.id ||
+      ingest?.id ||
+      null;
     if (!newIncidentId) return;
     for (const sid of cluster.sessionIds) {
       const s = sessions[sid];
@@ -457,7 +464,14 @@ ariaApp.post('/clusters/merge', async (req, res) => {
       return res.status(502).json({ error: `Ingest failed: ${txt}` });
     }
     const ingest = await ingestRes.json();
-    const newIncidentId = ingest?.incident?.id || ingest?.id || null;
+    // ingestTranscript returns `new_incident_id` for CREATE and `target_id`
+    // for UPDATE/FLAG_FOR_REVIEW — try both before falling back.
+    const newIncidentId =
+      ingest?.new_incident_id ||
+      ingest?.target_id ||
+      ingest?.incident?.id ||
+      ingest?.id ||
+      null;
 
     // Mark sessions as merged so they drop from future cluster snapshots.
     for (const sid of sessionIds) {
@@ -1022,7 +1036,14 @@ async function maybePromoteSessionToIncident(sessionId, opts) {
       return null;
     }
     const ingest = await ingestRes.json();
-    const newIncidentId = ingest?.incident?.id || ingest?.id || null;
+    // ingestTranscript returns `new_incident_id` for CREATE and `target_id`
+    // for UPDATE/FLAG_FOR_REVIEW — try both before falling back.
+    const newIncidentId =
+      ingest?.new_incident_id ||
+      ingest?.target_id ||
+      ingest?.incident?.id ||
+      ingest?.id ||
+      null;
     if (newIncidentId) {
       session._promotedIncidentId = newIncidentId;
       session.ticket.incidentId = newIncidentId;
