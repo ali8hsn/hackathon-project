@@ -1,4 +1,4 @@
-# Sentinel — Design Document
+# Haashir — Design Document
 
 > AI-powered dispatch assistant for emergency call prioritization and incident consolidation.
 
@@ -6,7 +6,7 @@
 
 ## 1. Overview
 
-Sentinel is a web-based tool that augments 911 operators by:
+Haashir is a web-based tool that augments 911 operators by:
 - Prioritizing incoming calls  
 - Consolidating repeated reports into unified incidents  
 - Reducing manual documentation burden  
@@ -36,7 +36,7 @@ Emergency call centers (PSAPs) face three major challenges:
 
 ## 3. Solution
 
-Sentinel introduces a real-time AI layer that:
+Haashir introduces a real-time AI layer that:
 - Screens and prioritizes incoming calls  
 - Clusters related calls into incidents  
 - Generates a live **Situation Sheet** per incident  
@@ -46,7 +46,7 @@ Sentinel introduces a real-time AI layer that:
 
 ## 4. Buildathon MVP Scope
 
-To ensure a focused and deliverable system, Sentinel’s buildathon implementation will include:
+To ensure a focused and deliverable system, Haashir’s buildathon implementation will include:
 
 ### In Scope
 - AI call prioritization (text-based)
@@ -72,7 +72,7 @@ We simulate 20 incoming calls across 3 distinct incidents:
 
 During the demo:
 1. Calls are ingested in real time
-2. Sentinel clusters them into incidents
+2. Haashir clusters them into incidents
 3. A Situation Sheet is dynamically generated
 4. Conflicting information is surfaced
 5. A high-priority call interrupts the queue and triggers an alert
@@ -303,9 +303,9 @@ Existing systems include:
 - No real-time multi-call aggregation
 - No conflict detection across callers
 
-### Sentinel Differentiation
+### Haashir Differentiation
 
-Unlike existing CAD systems, Sentinel:
+Unlike existing CAD systems, Haashir:
 - Aggregates multiple calls into a single evolving incident
 - Detects and surfaces contradictions between callers
 - Uses AI to prioritize and structure information in real time
@@ -325,7 +325,7 @@ This enables a more complete and accurate situational awareness.
 
 ## 11. User Impact
 
-Sentinel improves operator efficiency and emergency response quality by reducing workload and surfacing critical information faster.
+Haashir improves operator efficiency and emergency response quality by reducing workload and surfacing critical information faster.
 
 ### Key Impacts
 
@@ -346,7 +346,7 @@ Sentinel improves operator efficiency and emergency response quality by reducing
 
 ---
 
-Sentinel augments human operators, ensuring attention is focused on the most critical emergencies.
+Haashir augments human operators, ensuring attention is focused on the most critical emergencies.
 
 ---
 
